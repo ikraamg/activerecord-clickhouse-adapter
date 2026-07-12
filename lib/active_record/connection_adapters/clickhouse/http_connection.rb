@@ -101,7 +101,10 @@ module ActiveRecord
             output_format_json_quote_decimals: 1,
             output_format_json_quote_denormals: 1,
             # 1/2 make ALTER UPDATE/DELETE mutations block until applied (spec determinism).
-            mutations_sync: @config[:mutations_sync]
+            mutations_sync: @config[:mutations_sync],
+            # Server gzips responses ~3.6x smaller; Net::HTTP decompresses transparently
+            # (it sends Accept-Encoding: gzip by default). Probed 2026-07-12, PLAN.md §2.
+            enable_http_compression: @config.fetch(:compression, true) ? 1 : 0
           }.merge(params.transform_keys { |key| "param_#{key}" }).compact
         end
 
