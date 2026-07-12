@@ -42,8 +42,8 @@ module ActiveRecord
           @http = build_http
         end
 
-        def execute(sql)
-          response = @http.request(build_request(sql))
+        def execute(sql, params: {})
+          response = @http.request(build_request(sql, params))
           raise_execution_error(response) unless response.is_a?(Net::HTTPSuccess)
 
           parse(response)
@@ -73,16 +73,20 @@ module ActiveRecord
           http
         end
 
-        def build_request(sql)
-          request = Net::HTTP::Post.new("/?#{URI.encode_www_form(query_params)}")
+        def build_request(sql, params)
+          request = Net::HTTP::Post.new("/?#{URI.encode_www_form(query_params(params))}")
           request["X-ClickHouse-User"] = @config[:username] if @config[:username]
           request["X-ClickHouse-Key"] = @config[:password] if @config[:password]
           request.body = sql
           request
         end
 
-        def query_params
-          { database: @config[:database], default_format: SELECT_FORMAT }.compact
+        def query_params(params)
+          {
+            database: @config[:database],
+            default_format: SELECT_FORMAT,
+            wait_end_of_query: 1
+          }.merge(params.transform_keys { |key| "param_#{key}" }).compact
         end
 
         def raise_execution_error(response)

@@ -1,41 +1,37 @@
-# Iteration 2 (→ ~40%): quoting, server-side binds, error taxonomy
+# Iteration 3 (→ ~60%): schema statements + migrations
 
-> Status: ready for next session. Review checkpoint after Iteration 1 (type system) first.
+> Status: ready after Iteration 2 (quoting, binds, errors). Review checkpoint first.
 
-Read `AGENTS.md` and `PLAN.md` (§4 architecture, §5 decisions ledger, §6 Phase 2)
-before writing any code. Phase 0+1 are done: adapter registers, HTTP JSONCompact read
-path casts every supported family, 58 specs green, rubocop clean.
+Read `AGENTS.md` and `PLAN.md` (§4–§6 Phase 3) before writing code. Phases 0–2 are done:
+typed reads, quoting, server-side binds, error taxonomy. 72 specs green.
 
 ## Mission
 
-Ruby values round-trip into SQL safely, binds go to the server as typed `{name:Type}`
-parameters (no client-side interpolation), and ClickHouse exception codes become real
-Active Record errors.
+Expose ClickHouse schema through Active Record's official seams and support migrations
+that look like Rails but speak MergeTree.
 
 Deliverables, in TDD order:
 
-1. **`ClickHouse::Quoting`** — quote strings, dates/times, bools, arrays, tuples, maps,
-   `NULL` / `\N` semantics as needed for HTTP. Prove with live `SELECT {literal}` round-trips
-   and injection-style payloads (`'; DROP`, embedded quotes, unicode).
-2. **Server-side binds** — Arel collector emits `{p0:UInt64}` (etc.); HTTP layer sends
-   `param_p0=...`. `select_value("SELECT ? + 1", [41])` / bind-bearing relation queries work.
-   Fallback to quoted literals only where a type can't be inferred. Spec: injection payload
-   as a *bound value* must not alter SQL structure.
-3. **Error taxonomy** — map `X-ClickHouse-Exception-Code` via
-   `../clickhouse/src/Common/ErrorCodes.cpp`: 60/81 → unknown table/database subtypes,
-   241 → memory limit, 159/160 → timeout, 516 → auth, connection refused →
-   `ConnectionNotEstablished`. Mid-stream failure: keep `wait_end_of_query=1` on selects
-   so HTTP status stays honest (decision §5.9).
-4. **Grounding** — extend PLAN.md facts with anything the server teaches; rewrite this file
-   as the Iteration 3 brief (schema statements + migrations).
+1. **Schema introspection** — `tables` / `views` / `column_definitions` via
+   `system.tables` / `system.columns` (never parse `SHOW CREATE`). Indexes via
+   `system.data_skipping_indices` where applicable.
+2. **Migration DSL** — `create_table engine:, order:, partition:, ttl:, settings:, id:`;
+   column `codec:`, `materialized:`, `alias:`, `low_cardinality:`, `nullable:`;
+   skip `INDEX ... TYPE bloom_filter`. Default `id: false`; opt-in UUID.
+3. **Internal metadata** — `schema_migrations` / `ar_internal_metadata` as
+   `ReplacingMergeTree(ver)` with FINAL-reading accessors, via official Rails seams
+   (`internal_string_options_for_primary_key`, `schema_versions_formatter`,
+   `use_metadata_table`), not prepends.
+4. **DatabaseTasks** — create/drop/schema load/dump registration.
+5. **Acceptance corpus** — exercise patterns from `../core/db/migrate_clickhouse/` where
+   practical (read-only reference).
 
 ## Out of scope (resist)
 
-Schema/migrations (Iteration 3); write-path inserts; RowBinary; Nested/geometry casting
-deepening; NaN/Inf settings; performance work.
+Arel FINAL/SAMPLE/PREWHERE (later phase); RowBinary; write-path bulk insert optimizations;
+Nested casting deepening.
 
 ## Definition of done
 
-Full suite green against live 25.8; rubocop zero; PLAN.md Phase 2 marked done; this file
-rewritten for Iteration 3; session report with proposed Alchemist commit split. **No commits**
-unless Ikraam asks.
+Full suite green; rubocop zero; PLAN.md Phase 3 marked done; this file rewritten for
+Iteration 4; session report + proposed commit split. **No commits** unless asked.

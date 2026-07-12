@@ -49,6 +49,8 @@ Naming/PredicateMethod:
     - consume
     - peek
     - cast
+    - unquoted_true
+    - unquoted_false
 
 # Integration specs describe live behaviors (connection, migration flows), not one class.
 RSpec/DescribeClass:

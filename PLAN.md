@@ -50,6 +50,9 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | `Date` clamps below 1970-01-01; use `Date32` for 1900–2299 | Iteration 1 live |
 | UInt256 max must be passed as a String literal — unquoted numerics lose precision server-side | Iteration 1 live |
 | NaN/Inf arrive as JSON `null` unless `output_format_json_quote_denormals=1` (deferred) | Iteration 1 probe |
+| Ruby `gsub("'", "\\'")` is wrong — `\'` in replacement means post-match; use a block | Iteration 2 |
+| `wait_end_of_query=1` keeps HTTP status honest for select errors | Iteration 2 |
+| Exception codes 60/81/516 verified live as UNKNOWN_TABLE / UNKNOWN_DATABASE / AUTHENTICATION_FAILED | Iteration 2 |
 
 Local corpora:
 
@@ -213,10 +216,11 @@ AggregateFunction opaque. Coverage ratchet against `system.data_type_families`.
 58 examples green. Deferred: Nested, geometry, Interval*, Time/Time64, Dynamic/Variant,
 NaN/Inf quoting. Port targets remain available for deepening edge coverage later.
 
-**Phase 2 — Quoting, binds, errors.**
-`Quoting` module (strings, dates, arrays, tuples, maps, `\N` semantics), server-side param
-binds through the Arel collector, error taxonomy. Port targets: Rails `quoting_test.rb`,
-`bind_parameter_test.rb`, `sanitize_test.rb` cases.
+**Phase 2 — Quoting, binds, errors.** *(done — Iteration 2)*
+`Quoting` (CH string escapes, backticks, array/map literals), server-side `{pN:Type}`
+binds via the Arel Bind collector (`default_prepared_statements = true` only selects that
+path — nothing is prepared on the server), error taxonomy for codes 60/81/241/159/160/516,
+`wait_end_of_query=1` on HTTP selects. 72 examples green.
 
 **Phase 3 — Schema statements + migrations.**
 `tables`/`columns`/`column_definitions` via `system.tables`/`system.columns` (never string

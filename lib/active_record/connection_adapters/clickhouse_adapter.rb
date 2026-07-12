@@ -2,7 +2,9 @@
 
 require "active_record/connection_adapters/abstract_adapter"
 require "active_record/connection_adapters/clickhouse/database_statements"
+require "active_record/connection_adapters/clickhouse/error_translation"
 require "active_record/connection_adapters/clickhouse/http_connection"
+require "active_record/connection_adapters/clickhouse/quoting"
 require "active_record/connection_adapters/clickhouse/type_parser"
 require "active_record/connection_adapters/clickhouse/types"
 
@@ -11,7 +13,9 @@ module ActiveRecord
     class ClickHouseAdapter < AbstractAdapter
       ADAPTER_NAME = "ClickHouse"
 
+      include ClickHouse::Quoting
       include ClickHouse::DatabaseStatements
+      include ClickHouse::ErrorTranslation
 
       class << self
         def new_client(config)
@@ -60,8 +64,9 @@ module ActiveRecord
         connect
       end
 
-      # ClickHouse has no prepared statements; binds become server-side {name:Type} parameters.
-      def default_prepared_statements = false
+      # No server-side prepared statements; `true` selects the Arel Bind collector so we can
+      # rewrite `?` into ClickHouse `{pN:Type}` HTTP query parameters in perform_query.
+      def default_prepared_statements = true
     end
   end
 end
