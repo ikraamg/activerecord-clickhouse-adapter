@@ -5,6 +5,8 @@
 # Green = upstream pass or a skip documented in spec/rails_compat/skips.yml.
 
 require "activerecord-clickhouse-adapter"
+require "active_record/fixtures"
+require "active_record/testing/query_assertions"
 require "active_support/test_case"
 require "active_support/testing/method_call_assertions"
 require "yaml"
@@ -25,25 +27,73 @@ end
 
 ActiveRecord::Base.establish_connection(ARCompat::CONNECTION_CONFIG)
 
+# Quote "type" if it's a reserved word for the current connection (upstream helper.rb).
+QUOTED_TYPE = ActiveRecord::Base.lease_connection.quote_column_name("type")
+
+module ARCompat
+  # Mirrors upstream's AdapterHelper, which is both included and extended.
+  module AdapterHelper
+    def current_adapter?(*names)
+      names.include?(:ClickHouseAdapter)
+    end
+  end
+end
+
 module ActiveRecord
   class TestCase < ActiveSupport::TestCase
     include ActiveSupport::Testing::MethodCallAssertions
+    include ActiveRecord::Assertions::QueryAssertions
+    include ActiveRecord::TestFixtures
+    include ARCompat::AdapterHelper
+    extend ARCompat::AdapterHelper
+
+    self.fixture_paths = [File.expand_path("../../vendor/fixtures", __dir__)]
+    self.use_instantiated_fixtures = false
+    # No transactions to roll back — fixture tables reload before every test and the
+    # remaining schema-slice tables get truncated after it (PLAN.md §5 #15).
+    self.use_transactional_tests = false
 
     setup do
       reason = ARCompat::SKIPS.dig(self.class.name, name)
       skip(reason) if reason
     end
 
-    def current_adapter?(*names)
-      names.include?(:ClickHouseAdapter)
+    teardown do
+      if defined?(ARCompat::SchemaSlice)
+        stale_tables = ARCompat::SchemaSlice::TABLES - self.class.fixture_table_names.map(&:to_s)
+        connection = ActiveRecord::Base.lease_connection
+        stale_tables.each { |table| connection.execute("TRUNCATE TABLE #{connection.quote_table_name(table)}") }
+      end
     end
 
-    def with_timezone_config(default: :__unset)
-      previous = ActiveRecord.default_timezone
-      ActiveRecord.default_timezone = default unless default == :__unset
+    def quote_table_name(name)
+      ActiveRecord::Base.adapter_class.quote_table_name(name)
+    end
+
+    def capture_sql(include_schema: false)
+      counter = ActiveRecord::Assertions::QueryAssertions::SQLCounter.new
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+        yield
+        include_schema ? counter.log_all : counter.log
+      end
+    end
+
+    def with_timezone_config(cfg)
+      old_default_zone = ActiveRecord.default_timezone
+      old_awareness = ActiveRecord::Base.time_zone_aware_attributes
+      old_aware_types = ActiveRecord::Base.time_zone_aware_types
+      old_zone = Time.zone
+
+      ActiveRecord.default_timezone = cfg[:default] if cfg.key?(:default)
+      ActiveRecord::Base.time_zone_aware_attributes = cfg[:aware_attributes] if cfg.key?(:aware_attributes)
+      ActiveRecord::Base.time_zone_aware_types = cfg[:aware_types] if cfg.key?(:aware_types)
+      Time.zone = cfg[:zone] if cfg.key?(:zone)
       yield
     ensure
-      ActiveRecord.default_timezone = previous
+      ActiveRecord.default_timezone = old_default_zone
+      ActiveRecord::Base.time_zone_aware_attributes = old_awareness
+      ActiveRecord::Base.time_zone_aware_types = old_aware_types
+      Time.zone = old_zone
     end
 
     def with_env_tz(new_tz = "US/Eastern")

@@ -33,9 +33,11 @@ Metrics/ParameterLists:
 
 Metrics/MethodLength:
   AllowedMethods: [initialize]
-  # Flat mapping tables (type families, system.columns fields → Column).
+  # Flat mapping tables (type families, system.columns fields → Column); harness
+  # support mirrors upstream Rails test-helper semantics verbatim.
   Exclude:
     - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
+    - spec/rails_compat/support/**/*
 
 Metrics/ClassLength:
   Exclude:
@@ -45,16 +47,24 @@ Metrics/AbcSize:
   Exclude:
     - lib/active_record/connection_adapters/clickhouse/types.rb
     - lib/active_record/connection_adapters/clickhouse/schema_definitions.rb
+    - spec/rails_compat/support/**/*
 
 # Flat type-mapping tables and the breadth of the AR schema contract.
 Metrics/CyclomaticComplexity:
   Exclude:
     - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
+    - spec/rails_compat/support/**/*
+
+Metrics/PerceivedComplexity:
+  Exclude:
+    - spec/rails_compat/support/**/*
 
 Metrics/ModuleLength:
   Exclude:
     - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
     - lib/active_record/connection_adapters/clickhouse/database_statements.rb
+    # The hand-translated schema slice is one flat DDL table per vendored suite.
+    - spec/rails_compat/support/schema_slice.rb
 
 # visit_* names and the `o` parameter are Rails' visitor contracts (SchemaCreation, Arel).
 Naming/MethodName:
