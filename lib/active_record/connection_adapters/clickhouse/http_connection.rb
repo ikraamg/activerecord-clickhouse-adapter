@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "bigdecimal"
 require "json"
 require "net/http"
 require "uri"
@@ -85,7 +84,10 @@ module ActiveRecord
           {
             database: @config[:database],
             default_format: SELECT_FORMAT,
-            wait_end_of_query: 1
+            wait_end_of_query: 1,
+            # Defaults corrupt silently: Decimals float-parse lossily, NaN/Inf become null.
+            output_format_json_quote_decimals: 1,
+            output_format_json_quote_denormals: 1
           }.merge(params.transform_keys { |key| "param_#{key}" }).compact
         end
 
@@ -95,10 +97,7 @@ module ActiveRecord
         end
 
         def parse(response)
-          # decimal_class keeps Decimal(P,S) exact; Float casters convert BigDecimal → Float.
-          names, types, *rows = response.body.to_s.each_line.map do |line|
-            JSON.parse(line, decimal_class: BigDecimal)
-          end
+          names, types, *rows = response.body.to_s.each_line.map { |line| JSON.parse(line) }
 
           RawResult.new(
             columns: names || [],

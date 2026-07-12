@@ -27,9 +27,31 @@ RSpec.describe "ClickHouse type casting", :aggregate_failures do
     expect(value).to eq((2**256) - 1)
   end
 
-  it "casts Float64 from BigDecimal wire values to Float" do
+  it "casts Float64 to Float" do
     expect(select_value("SELECT toFloat64(1.5)")).to eq(1.5)
     expect(select_value("SELECT toFloat64(1.5)")).to be_a(Float)
+  end
+
+  it "preserves NaN instead of collapsing it to 0.0" do
+    expect(select_value("SELECT nan")).to be_nan
+  end
+
+  it "preserves positive and negative Infinity" do
+    expect(select_value("SELECT 1/0")).to eq(Float::INFINITY)
+    expect(select_value("SELECT -1/0")).to eq(-Float::INFINITY)
+  end
+
+  it "preserves NaN inside arrays" do
+    expect(select_value("SELECT [nan]").first).to be_nan
+  end
+
+  it "casts floats nested in JSON columns as Float, not BigDecimal" do
+    value = select_value(%(SELECT CAST('{"price": 1.5}', 'JSON')))
+    expect(value["price"]).to be_a(Float)
+  end
+
+  it "round-trips Decimal inside arrays as exact BigDecimal" do
+    expect(select_value("SELECT [toDecimal64('1.5', 2)]")).to eq([BigDecimal("1.5")])
   end
 
   it "round-trips Decimal(38, 10) as exact BigDecimal" do

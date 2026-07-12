@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "date"
+require "strscan"
 
 module ActiveRecord
   module ConnectionAdapters
@@ -41,54 +42,93 @@ module ActiveRecord
 
         def affected_rows(raw_result) = raw_result.written_rows
 
-        # Replace `?` placeholders with ClickHouse `{pN:Type}` and collect HTTP param values.
+        STRING_LITERAL = /'(?:\\.|''|[^'])*'/m
+        BACKTICK_IDENTIFIER = /`(?:\\.|``|[^`])*`/m
+        private_constant :STRING_LITERAL, :BACKTICK_IDENTIFIER
+
+        # Replace `?` placeholders with ClickHouse `{pN:Type}` and collect HTTP param
+        # values, skipping `?` inside string literals and backtick identifiers.
         def materialize_query_params(sql, binds, type_casted_binds) # rubocop:disable Metrics/MethodLength
           return [sql, {}] if binds.blank?
 
+          scanner = StringScanner.new(sql)
+          rewritten = +""
           params = {}
-          index = -1
-          rewritten = sql.gsub("?") do
-            index += 1
-            name = "p#{index}"
-            params[name] = format_query_param(type_casted_binds.fetch(index))
-            "{#{name}:#{clickhouse_bind_type(binds.fetch(index), type_casted_binds.fetch(index))}}"
+          until scanner.eos?
+            rewritten << if scanner.skip("?")
+                           bind_placeholder(params, binds, type_casted_binds)
+                         else
+                           scan_non_placeholder_fragment(scanner)
+                         end
           end
-          raise ArgumentError, "wrong number of bind parameters" unless index == binds.length - 1
-
+          verify_bind_count(params, binds)
           [rewritten, params]
         end
 
+        def verify_bind_count(params, binds)
+          return if params.length == binds.length
+
+          raise ArgumentError, "wrong number of binds (#{params.length} for #{binds.length})"
+        end
+
+        def scan_non_placeholder_fragment(scanner)
+          scanner.scan(STRING_LITERAL) || scanner.scan(BACKTICK_IDENTIFIER) || scanner.scan(/[^?'`]+/) || scanner.getch
+        end
+
+        def bind_placeholder(params, binds, type_casted_binds)
+          index = params.length
+          raise ArgumentError, "more ? placeholders than binds (#{binds.length})" if index >= binds.length
+
+          name = "p#{index}"
+          params[name] = format_query_param(type_casted_binds.fetch(index))
+          "{#{name}:#{clickhouse_bind_type(binds.fetch(index), type_casted_binds.fetch(index))}}"
+        end
+
+        # Adapter-level type_cast already stringifies Date/Time (with subseconds) and
+        # BigDecimal before values reach here.
         def format_query_param(value)
           case value
-          when Time, DateTime then value.utc.strftime("%Y-%m-%d %H:%M:%S")
-          when Date then value.strftime("%Y-%m-%d")
           when true, false then value
           else value.to_s
           end
         end
 
-        def clickhouse_bind_type(bind, casted_value) # rubocop:disable Metrics/CyclomaticComplexity
+        # Date/Time binds arrive as pre-formatted strings (adapter type_cast), so only the
+        # declared AR type can recover them; everything else is inferable from the value.
+        def clickhouse_bind_type(bind, casted_value)
           type = bind.type if bind.respond_to?(:type)
           case type
-          when ActiveRecord::Type::Boolean then "Bool"
-          when ActiveRecord::Type::Integer then casted_value.negative? ? "Int64" : "UInt64"
-          when ActiveRecord::Type::Float then "Float64"
-          when ActiveRecord::Type::Decimal, ActiveRecord::Type::String, ActiveRecord::Type::Text then "String"
           when ActiveRecord::Type::Date then "Date"
-          when ActiveRecord::Type::DateTime then "DateTime64(6)"
+          when ActiveRecord::Type::DateTime, ActiveRecord::Type::Time then "DateTime64(6)"
           else inferred_bind_type(casted_value)
           end
         end
 
         def inferred_bind_type(casted_value)
           case casted_value
-          when Integer then casted_value.negative? ? "Int64" : "UInt64"
+          when Integer then clickhouse_integer_type(casted_value)
           when Float then "Float64"
           when true, false then "Bool"
           when Date then "Date"
           when Time, DateTime then "DateTime64(6)"
           else "String"
           end
+        end
+
+        INTEGER_TYPE_BY_RANGE = {
+          "Int64" => -(2**63)...(2**63),
+          "UInt64" => 0...(2**64),
+          "Int128" => -(2**127)...(2**127),
+          "UInt128" => 0...(2**128),
+          "Int256" => -(2**255)...(2**255),
+          "UInt256" => 0...(2**256)
+        }.freeze
+        private_constant :INTEGER_TYPE_BY_RANGE
+
+        # Sized by magnitude — a too-small type makes the server wrap the value mod 2^N.
+        def clickhouse_integer_type(value)
+          type, = INTEGER_TYPE_BY_RANGE.find { |_, range| range.cover?(value) }
+          type || raise(ActiveModel::RangeError, "#{value} is out of range for ClickHouse integer types")
         end
       end
     end

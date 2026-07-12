@@ -145,6 +145,10 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
    `{p0:UInt64}` placeholders typed from the bind's `ActiveModel::Type`; the HTTP layer sends
    `param_p0=...`. True injection-proof binds (verified live), no client-side interpolation.
    Fallback to quoted literals only where a type can't be inferred.
+   The `?`→`{pN:Type}` rewrite scans literal-aware (skips `'...'` strings and backtick
+   identifiers — naive gsub corrupted `concat('what?', ?)`); integer param types are sized
+   by magnitude up to Int256/UInt256 (a too-small type made the server wrap `2**70` → 0),
+   beyond which we raise rather than wrap.
 2. **Read path formats.** v1 `JSONCompactEachRowWithNamesAndTypes` (self-describing, exact
    big-int handling confirmed), sent with `output_format_json_quote_decimals=1` +
    `output_format_json_quote_denormals=1` so Decimals stay exact and `NaN`/`±Inf` survive

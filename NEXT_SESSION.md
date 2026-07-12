@@ -1,6 +1,9 @@
 # Iteration 3 (→ ~60%): schema statements + migrations
 
-> Status: ready after Iteration 2 (quoting, binds, errors). Review checkpoint first.
+> Status: ready. Iterations 0–2 reviewed 2026-07-12; the four review findings
+> (NaN/Inf→0.0, decimal_class leak into JSON columns, `?` matched inside literals,
+> integer binds wrapping mod 2⁶⁴) are fixed with failing-first specs — 85 green, rubocop
+> clean. Whole tree still uncommitted.
 
 Read `AGENTS.md` and `PLAN.md` (§4–§6 Phase 3) before writing code. Phases 0–2 are done:
 typed reads, quoting, server-side binds, error taxonomy. 72 specs green.

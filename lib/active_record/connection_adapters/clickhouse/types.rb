@@ -75,7 +75,13 @@ module ActiveRecord
         class FloatCaster
           include Singleton
 
-          def cast(value) = value.to_f
+          # quote_denormals=1 delivers these as strings; anything else must be numeric.
+          DENORMAL_VALUES = {
+            "nan" => Float::NAN, "inf" => Float::INFINITY,
+            "+inf" => Float::INFINITY, "-inf" => -Float::INFINITY
+          }.freeze
+
+          def cast(value) = DENORMAL_VALUES.fetch(value) { Float(value) }
         end
 
         class DecimalCaster
