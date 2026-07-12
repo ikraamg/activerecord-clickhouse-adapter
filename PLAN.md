@@ -67,6 +67,7 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | Clause grammar: `FROM t [FINAL] [SAMPLE f] PREWHERE ... WHERE ... ORDER BY ... LIMIT n BY cols LIMIT m SETTINGS ...` — `LIMIT m` before `LIMIT n BY` is a syntax error | Iteration 5 live |
 | `FINAL` on a non-replacing MergeTree raises code 181; `SAMPLE` without `SAMPLE BY` in DDL raises code 141 | Iteration 5 probe |
 | `EXPLAIN` / `EXPLAIN PIPELINE` / `EXPLAIN ESTIMATE` / `EXPLAIN indexes = 1` all return single-String-column result sets over HTTP | Iteration 5 probe |
+| minitest 6 (Ruby 4 default) extracted `minitest/mock` to a separate gem — Rails 8.1 test helpers need minitest ~> 5.25 | Iteration 6 |
 
 Local corpora:
 
@@ -278,12 +279,16 @@ DialectSuffix riding the unused lock slot) rendered by `Arel::Visitors::ClickHou
 Deferred: `ARRAY JOIN`/`GLOBAL JOIN` modifiers, window-function passthrough specs,
 `00409_prewhere` deep ports (basic prewhere proven live).
 
-**Phase 6 — Rails-compat harness at scale.**
-A `rails_compat/` minitest runner that vendors Rails' AR suite (pinned to the local
-`../rails-main` SHA) with our connection config, akin to `ARCONN=clickhouse`. Green =
-pass or manifest-documented skip. This is the long tail that separates "works in my app"
-from "fully featured": schema cache, prevent-writes on replicas, multiple databases,
-query cache, async queries, `explain`, fixtures.
+**Phase 6 — Rails-compat harness at scale.** *(harness landed — Iteration 6; review summit)*
+Landed: `spec/rails_compat/` — vendored upstream suites byte-exact from the **v8.1.3 tag**
+(`vendor/UPSTREAM` records provenance + refresh command), a minimal `cases/helper` shim
+(connection config, `current_adapter?`, timezone helpers, skip-manifest setup hook),
+`run.rb` minitest runner, `skips.yml` ratchet (currently **empty** — mechanism verified
+live), and an RSpec wrapper so `bundle exec rspec` covers the harness. First corpus:
+`quoting_test`, `type_test`, `errors_test` — 41 upstream runs, 0 failures, 0 skips.
+Next expansions (post-review): suites needing schema/fixtures (`basics_test`,
+`calculations_test`, `insert_all_test`) — these need a schema-translation rule
+(implicit-id tables) and a fixture strategy; both are open design questions below.
 
 **Phase 7 — Performance program.**
 - `benchmarks/` with benchmark-ips + memory_profiler: 100k-row typed SELECT

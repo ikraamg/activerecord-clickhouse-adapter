@@ -1,0 +1,4 @@
+# Skip manifest for the vendored Rails Active Record suites.
+# Every entry needs a one-line reason; this file may only shrink (ratchet).
+# Format: { "TestClassName" => { "test_method_name" => "reason" } }
+{}

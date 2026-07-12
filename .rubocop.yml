@@ -5,6 +5,9 @@ AllCops:
   TargetRubyVersion: 3.2
   NewCops: enable
   SuggestExtensions: false
+  Exclude:
+    # Byte-exact vendored Rails test files (see spec/rails_compat/vendor/UPSTREAM).
+    - spec/rails_compat/vendor/**/*
 
 Style/Documentation:
   Enabled: false

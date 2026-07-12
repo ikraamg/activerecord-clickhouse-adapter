@@ -1,42 +1,37 @@
-# Iteration 6 (→ review summit): rails-compat harness
+# Iteration 7 (post-review): expand the compat corpus + schema dumping
 
-> Status: ready. Iteration 5 landed the dialect surface (.final/.sample/.prewhere/
-> .settings/.limit_by via opt-in Querying concern + custom Arel nodes) and
-> Relation#explain with all four variants. 167 examples green, rubocop clean, committed.
+> Status: REVIEW SUMMIT REACHED. The Phase 6 rails-compat harness landed
+> (spec/rails_compat/: v8.1.3-pinned vendored suites, skip-manifest ratchet, RSpec
+> wrapper). 168 rspec examples + 41 upstream minitest runs green, rubocop clean,
+> tree committed. Waiting on Ikraam's review before continuing.
 
-Read `AGENTS.md` and `PLAN.md` (§4–§6 Phase 6) before writing code.
+## Open design questions for the review (blockers for this iteration)
 
-**This iteration ends with a hard stop for Ikraam's review — do not start Phase 7.**
+1. **Schema translation rule for upstream suites.** Rails' schema.rb creates hundreds
+   of implicit-id tables. Options: (a) synthesize `order: "id"` + a client-generated
+   id per insert for compat tables only; (b) skip id-dependent suites wholesale in the
+   manifest; (c) a compat-only `id: :uuid` default. Recommendation: (a) for the
+   narrow set of suites we vendor, since it exercises realistic pk-less semantics least.
+2. **Fixture strategy.** Rails fixtures want transactional rollback (impossible) or
+   truncation. Recommendation: truncate-between-tests helper in the shim, mirroring
+   the incumbent gem's test-helper hooks (PLAN §3 "worth keeping").
+3. **`update`/`save` on loaded records** (deferred from Iteration 4): with no pk,
+   `record.update` cannot target a row. Options: raise with guidance (honest), or
+   support it only for models that declare `self.primary_key = ...` explicitly.
+   Recommendation: the latter — it matches ReplacingMergeTree usage patterns.
 
-## Goal
+## Scope once unblocked
 
-A repeatable harness that runs Rails' own Active Record suite against this adapter and
-turns the result into a ratcheting pass/skip manifest.
-
-## Scope
-
-1. **Harness skeleton** (`spec/rails_compat/`): a runner that boots selected minitest
-   files from `../rails-main/activerecord/test` (pinned SHA — record it) with our
-   connection config, non-transactional fixtures, and table truncation between tests.
-   Start narrow: `cases/adapter_test.rb`-style smoke, then `basics_test`.
-2. **skips.yml manifest**: every skipped upstream test gets a one-line reason
-   ("needs unique PK", "needs transactions", "MySQL-specific"...). Green = pass or
-   manifest-documented skip. The manifest may only shrink.
-3. **Fixture strategy probe**: Rails fixtures INSERT with multi-row VALUES and
-   disable/re-enable referential integrity — probe what breaks on ClickHouse and
-   document.
-4. **Schema translation**: the AR suite's schema.rb uses `t.integer`/`t.string` with
-   implicit ids — decide per-suite whether to synthesize `order:` (e.g. first column)
-   or skip; document the rule in PLAN.md.
-5. **Grow the e2e spine** if any new capability lands en route.
-
-## Stop conditions (from AUTONOMOUS_RUN.md)
-
-The harness landing IS the review summit. Also stop on: design forks PLAN §5 doesn't
-answer, a failure surviving two honest fix attempts, sibling-repo edits, new runtime deps.
+1. Apply review feedback.
+2. Vendor `calculations_test` (+ its schema slice) with the agreed schema rule;
+   grow skips.yml honestly.
+3. Schema dumper (`schema.rb` with engine/order/partition options round-trip,
+   `structure.sql` via SHOW CREATE) — Phase 3 deferred item, needed before TRMNL
+   swap-over (Phase 9).
+4. `db:*` rake tasks via `DatabaseTasks.register_task`.
+5. Grow the e2e spine with schema dump → load → re-query.
 
 ## Boundary checklist
 
-Full suite green + rubocop zero + PLAN.md updated + this file rewritten for the
-post-review iteration + Alchemist commits per coherent unit + the full final report
-format from AUTONOMOUS_RUN.md. Never push.
+Full suite green + rubocop zero + PLAN.md updated + this file rewritten + Alchemist
+commits per coherent unit. Never push.

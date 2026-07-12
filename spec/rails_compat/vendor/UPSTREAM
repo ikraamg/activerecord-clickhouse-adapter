@@ -1,0 +1,7 @@
+Vendored from rails/rails tag v8.1.3 (activerecord/test/cases), byte-exact:
+
+- cases/quoting_test.rb
+- cases/type_test.rb
+
+Refresh with:
+  git -C ../rails-main show v8.1.3:activerecord/test/cases/<file> > vendor/cases/<file>
