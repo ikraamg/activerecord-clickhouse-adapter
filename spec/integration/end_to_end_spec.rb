@@ -99,4 +99,22 @@ RSpec.describe "End-to-end telemetry spine" do
   it "explains index pruning on the sorting key" do
     expect(model.where(device_id: 1).explain(:indexes).inspect).to include("PrimaryKey")
   end
+
+  # count() is answered from metadata (optimize_trivial_count_query: read_rows 1), so a
+  # real column aggregation is needed to observe rows being read.
+  it "surfaces server-side read stats in the notification payload" do
+    stats = []
+    callback = ->(event) { stats << event.payload[:clickhouse] }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { model.sum(:duration_ms) }
+    expect(stats.last).to include(read_rows: 3)
+  end
+
+  it "surfaces server-side write stats in the notification payload" do
+    stats = []
+    callback = ->(event) { stats << event.payload[:clickhouse] }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      model.insert_all!([{ device_id: 9, event_type: "checkin" }, { device_id: 9, event_type: "render" }])
+    end
+    expect(stats.last).to include(written_rows: 2)
+  end
 end

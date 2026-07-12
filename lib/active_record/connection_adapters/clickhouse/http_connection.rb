@@ -24,16 +24,28 @@ module ActiveRecord
         end
 
         class RawResult
-          attr_reader :columns, :types, :rows, :summary
+          attr_reader :columns, :types, :rows, :summary, :query_id
 
-          def initialize(columns: [], types: [], rows: [], summary: {})
+          def initialize(columns: [], types: [], rows: [], summary: {}, query_id: nil)
             @columns = columns
             @types = types
             @rows = rows
             @summary = summary
+            @query_id = query_id
           end
 
           def written_rows = Integer(summary.fetch("written_rows", 0))
+
+          # Server-side execution stats, for the sql.active_record notification payload.
+          def stats
+            {
+              query_id: query_id,
+              read_rows: Integer(summary.fetch("read_rows", 0)),
+              read_bytes: Integer(summary.fetch("read_bytes", 0)),
+              written_rows: written_rows,
+              elapsed_ns: Integer(summary.fetch("elapsed_ns", 0))
+            }
+          end
         end
 
         def initialize(config)
@@ -105,7 +117,8 @@ module ActiveRecord
             columns: names || [],
             types: types || [],
             rows: rows,
-            summary: JSON.parse(response["x-clickhouse-summary"] || "{}")
+            summary: JSON.parse(response["x-clickhouse-summary"] || "{}"),
+            query_id: response["x-clickhouse-query-id"]
           )
         end
       end

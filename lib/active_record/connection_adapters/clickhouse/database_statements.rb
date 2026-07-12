@@ -43,7 +43,10 @@ module ActiveRecord
           sql, params = materialize_query_params(sql, binds, type_casted_binds)
           result = raw_connection.execute(sql, params: params)
           verified!
-          notification_payload[:row_count] = result.rows.size if notification_payload
+          if notification_payload
+            notification_payload[:row_count] = result.rows.size
+            notification_payload[:clickhouse] = result.stats
+          end
           result
         end
 
