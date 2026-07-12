@@ -45,12 +45,15 @@ module ActiveRecord
 
         def indexes(table_name)
           skipping_indices_sql = <<~SQL.squish
-            SELECT name, expr, type FROM system.data_skipping_indices
+            SELECT name, expr, type_full, granularity FROM system.data_skipping_indices
             WHERE database = currentDatabase() AND table = #{quote(table_name.to_s)}
           SQL
 
           select_all(skipping_indices_sql, "SCHEMA").map do |row|
-            IndexDefinition.new(table_name.to_s, row["name"], false, [row["expr"]], using: row["type"].to_sym)
+            ClickHouse::IndexDefinition.new(
+              table_name.to_s, row["name"],
+              columns: [row["expr"]], using: row["type_full"], granularity: row["granularity"]
+            )
           end
         end
 
@@ -81,11 +84,71 @@ module ActiveRecord
           when "uuid" then "UUID"
           when "json" then "JSON"
           else
-            raise ArgumentError, "unsupported column type for ClickHouse: #{type.inspect}"
+            clickhouse_type_verbatim(type)
           end
         end
 
+        # Everything system.tables knows about the table beyond columns, in the shape
+        # our create_table DSL accepts — this is what the schema dumper emits.
+        def table_options(table_name)
+          row = select_one(<<~SQL.squish, "SCHEMA")
+            SELECT engine_full, sorting_key, partition_key FROM system.tables
+            WHERE database = currentDatabase() AND name = #{quote(table_name.to_s)}
+          SQL
+          return {} unless row
+
+          clauses = parse_engine_full(row["engine_full"])
+          {
+            engine: clauses[:engine],
+            partition: row["partition_key"].presence,
+            order: format_sorting_key(row["sorting_key"]),
+            ttl: clauses[:ttl],
+            settings: dumpable_settings(clauses[:settings])
+          }.compact
+        end
+
         private
+
+        # DSL types like t.column :tags, "Array(String)" pass through verbatim once they
+        # parse as a ClickHouse type; the server validates the family at DDL time.
+        def clickhouse_type_verbatim(type)
+          string = type.to_s
+          raise ArgumentError, "unsupported column type for ClickHouse: #{type.inspect}" unless string.match?(/\A[A-Z]/)
+
+          TypeParser.parse(string)
+          string
+        rescue TypeParser::Error
+          raise ArgumentError, "unsupported column type for ClickHouse: #{type.inspect}"
+        end
+
+        # engine_full is "Engine(args) [PARTITION BY ...] [PRIMARY KEY ...] [ORDER BY ...]
+        # [SAMPLE BY ...] [TTL ...] [SETTINGS ...]" — split on the clause keywords.
+        ENGINE_FULL_CLAUSES = /\s+(PARTITION BY|PRIMARY KEY|ORDER BY|SAMPLE BY|TTL|SETTINGS)\s+/
+        private_constant :ENGINE_FULL_CLAUSES
+
+        def parse_engine_full(engine_full)
+          engine, *clause_pairs = engine_full.to_s.split(ENGINE_FULL_CLAUSES)
+          clauses = clause_pairs.each_slice(2).to_h { |keyword, expression| [keyword, expression] }
+          { engine: engine.presence, ttl: clauses["TTL"], settings: clauses["SETTINGS"] }
+        end
+
+        def format_sorting_key(sorting_key)
+          return nil if sorting_key.blank?
+
+          sorting_key.include?(",") ? "(#{sorting_key})" : sorting_key
+        end
+
+        # index_granularity = 8192 is the server default — dumping it is pure noise.
+        def dumpable_settings(settings_clause)
+          return nil if settings_clause.blank?
+
+          settings = settings_clause.split(", ").to_h do |assignment|
+            key, value = assignment.split(" = ", 2)
+            [key.to_sym, value.match?(/\A-?\d+\z/) ? Integer(value) : value]
+          end
+          settings.delete(:index_granularity) if settings[:index_granularity] == 8192
+          settings.presence
+        end
 
         def internal_table_options(table_name, options)
           case table_name.to_s

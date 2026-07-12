@@ -17,6 +17,17 @@ module ActiveRecord
         end
       end
 
+      # A ClickHouse data-skipping index: `using` is the full index type expression
+      # ("bloom_filter", "set(100)", ...) and granularity is index blocks per granule.
+      class IndexDefinition < ConnectionAdapters::IndexDefinition
+        attr_reader :granularity
+
+        def initialize(table, name, columns:, using:, granularity:)
+          @granularity = granularity
+          super(table, name, false, columns, using: using)
+        end
+      end
+
       class SchemaCreation < ConnectionAdapters::SchemaCreation
         private
 
@@ -38,6 +49,15 @@ module ActiveRecord
 
         def visit_AddColumnDefinition(o)
           "ADD COLUMN #{accept(o.column)}"
+        end
+
+        # Data-skipping indexes are part of CREATE TABLE (supports_indexes_in_create?);
+        # the expression passes through verbatim — it may be a function of columns.
+        def index_in_create(_table_name, column_name, options)
+          expression = Array(column_name).join(", ")
+          type = options.fetch(:using) { raise ArgumentError, "ClickHouse indexes need using: (e.g. \"bloom_filter\")" }
+          "INDEX #{quote_column_name(options.fetch(:name))} #{expression} " \
+            "TYPE #{type} GRANULARITY #{options.fetch(:granularity, 1)}"
         end
 
         def add_column_options!(sql, options)

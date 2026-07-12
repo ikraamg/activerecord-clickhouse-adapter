@@ -7,6 +7,7 @@ require "active_record/connection_adapters/clickhouse/http_connection"
 require "active_record/connection_adapters/clickhouse/querying"
 require "active_record/connection_adapters/clickhouse/quoting"
 require "active_record/connection_adapters/clickhouse/schema_definitions"
+require "active_record/connection_adapters/clickhouse/schema_dumper"
 require "active_record/connection_adapters/clickhouse/schema_statements"
 require "active_record/connection_adapters/clickhouse/type_parser"
 require "active_record/connection_adapters/clickhouse/types"
@@ -51,6 +52,33 @@ module ActiveRecord
       end
 
       def supports_explain? = true
+
+      # Data-skipping indexes are INDEX clauses inside CREATE TABLE, not statements.
+      def supports_indexes_in_create? = true
+
+      NATIVE_DATABASE_TYPES = {
+        string: { name: "String" },
+        text: { name: "String" },
+        integer: { name: "Int32", limit: 4 },
+        bigint: { name: "Int64", limit: 8 },
+        float: { name: "Float64" },
+        decimal: { name: "Decimal" },
+        datetime: { name: "DateTime64" },
+        date: { name: "Date32" },
+        boolean: { name: "Bool" },
+        uuid: { name: "UUID" },
+        json: { name: "JSON" }
+      }.freeze
+
+      def native_database_types = NATIVE_DATABASE_TYPES
+
+      # Column types the dumper can't map to AR symbols (Array, Map, Tuple, ...) are
+      # dumped verbatim, so every introspected type is valid by construction.
+      def valid_type?(_type) = true
+
+      def create_schema_dumper(options) # :nodoc:
+        ClickHouse::SchemaDumper.create(self, options)
+      end
 
       def get_database_version # :nodoc:
         Version.new(query_value("SELECT version()", "SCHEMA"))

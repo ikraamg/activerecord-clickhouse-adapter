@@ -117,4 +117,16 @@ RSpec.describe "End-to-end telemetry spine" do
     end
     expect(stats.last).to include(written_rows: 2)
   end
+
+  it "survives a schema dump, reload, and re-query round trip" do
+    ActiveRecord::SchemaDumper.ignore_tables = [->(table) { table != "spine_events" }]
+    dump = ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection_pool, StringIO.new).string
+    ActiveRecord::Base.lease_connection.drop_table("spine_events")
+    eval(dump) # rubocop:disable Security/Eval -- loading the dump is the point
+    model.reset_column_information
+    model.create!(device_id: 7, ts: Time.utc(2026, 7, 2, 10, 0), event_type: "render", duration_ms: 55)
+    expect(model.where(device_id: 7).pluck(:duration_ms)).to eq([55])
+  ensure
+    ActiveRecord::SchemaDumper.ignore_tables = []
+  end
 end

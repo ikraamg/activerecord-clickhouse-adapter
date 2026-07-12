@@ -39,4 +39,23 @@ RSpec.describe "TRMNL core migrations corpus" do
     expect(migration_context.get_all_versions).to eq([])
     expect(connection.tables).not_to include("events", "logs", "jobs", "requests", "deploys")
   end
+
+  it "round-trips the migrated schema through the dumper" do
+    skip "TRMNL core corpus not checked out at #{corpus_path}" unless File.directory?(corpus_path)
+
+    corpus_tables = %w[events logs jobs requests deploys]
+    ActiveRecord::SchemaDumper.ignore_tables = [->(table) { corpus_tables.exclude?(table) }]
+    migration_context.migrate
+    first_dump = dump_schema
+    corpus_tables.each { |table| connection.drop_table(table) }
+    eval(first_dump) # rubocop:disable Security/Eval -- loading the dump is the point
+    expect(dump_schema).to eq(first_dump)
+  ensure
+    ActiveRecord::SchemaDumper.ignore_tables = []
+    migration_context.migrate(0) if File.directory?(corpus_path)
+  end
+
+  def dump_schema
+    ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection_pool, StringIO.new).string
+  end
 end
