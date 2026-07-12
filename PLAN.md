@@ -53,6 +53,13 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | Ruby `gsub("'", "\\'")` is wrong — `\'` in replacement means post-match; use a block | Iteration 2 |
 | `wait_end_of_query=1` keeps HTTP status honest for select errors | Iteration 2 |
 | Exception codes 60/81/516 verified live as UNKNOWN_TABLE / UNKNOWN_DATABASE / AUTHENTICATION_FAILED | Iteration 2 |
+| `INSERT ... VALUES ({p:Type})` accepts server-side params like SELECT does | Iteration 3 probe |
+| Lightweight `DELETE` rejects table-qualified WHERE columns (`t.col` → code 47 UNKNOWN_IDENTIFIER against the mutation's internal projection); Arel visitor emits bare names in deletes | Iteration 3 live |
+| `ALTER TABLE ... UPDATE` works with `mutations_sync=1` as an HTTP param | Iteration 3 probe |
+| `SHOW CREATE TABLE` normalizes `INTERVAL 30 DAY` → `toIntervalDay(30)` | Iteration 3 live |
+| `system.columns.default_expression` returns string literals quoted (`'none'`), function defaults verbatim (`now64(3)`) | Iteration 3 live |
+| Without a Rails env, `InternalMetadata` records environment as the db_config `env_name` (`default_env` for a plain hash config) | Iteration 3 live |
+| TRMNL corpus needs `inflect.acronym "TTL"` (app inflection) for `ReduceLogsTTLToFourteenDays` to resolve | Iteration 3 live |
 
 Local corpora:
 
@@ -226,18 +233,20 @@ binds via the Arel Bind collector (`default_prepared_statements = true` only sel
 path — nothing is prepared on the server), error taxonomy for codes 60/81/241/159/160/516,
 `wait_end_of_query=1` on HTTP selects. 72 examples green.
 
-**Phase 3 — Schema statements + migrations.**
-`tables`/`columns`/`column_definitions` via `system.tables`/`system.columns` (never string
-parsing of `SHOW CREATE`), migration DSL: `create_table engine:, order:, partition:,
-ttl:, settings:, id:`; column `codec:`, `materialized:`, `alias:`, `low_cardinality:`,
-`nullable:`; `INDEX ... TYPE bloom_filter` skip indexes; materialized views.
-ReplacingMergeTree internal metadata tables — via the official seams this time:
-`internal_string_options_for_primary_key`, `ActiveRecord.schema_versions_formatter`, and
-`use_metadata_table: false` support, not prepends onto `SchemaMigration`/`InternalMetadata`
-(prepending is exactly where the prior art accumulates per-Rails-version branches).
-`db:create/drop/migrate/rollback/schema:dump/load` via `DatabaseTasks.register_task`. TRMNL core's 16 real migrations in
-`../core/db/migrate_clickhouse/` become an acceptance corpus: they must run verbatim (or with
-documented deltas). Port targets: Rails `migration/*` + `adapters/*` schema cases.
+**Phase 3 — Schema statements + migrations.** *(core done — Iteration 3)*
+Landed: `tables`/`views`/`columns`/`indexes`/`primary_keys` via `system.tables`/
+`system.columns`/`system.data_skipping_indices` (no `SHOW CREATE` string parsing); migration
+DSL `create_table engine:, order:, partition:, ttl:, settings:` with `id: false` default,
+mandatory ORDER BY for MergeTree, `null:`/`low_cardinality:` type wrapping, sized integer
+limits, proc defaults; `Arel::Visitors::ClickHouse` (official visitor seam) unqualifying
+DELETE WHERE columns; internal metadata tables as ReplacingMergeTree via a `create_table`
+name intercept (no prepends onto `SchemaMigration`/`InternalMetadata`); full
+`MigrationContext` flow green (migrate/re-migrate/rollback); **TRMNL core's 16 real
+migrations run verbatim up and down** (`spec/clickhouse/trmnl_corpus_spec.rb`); e2e spine
+started (`spec/integration/end_to_end_spec.rb`). 122 examples green.
+Deferred: column `codec:`/`materialized:`/`alias:`, skip-index DSL (raw `INDEX` in execute
+works), materialized views, `db:*` rake tasks via `DatabaseTasks.register_task`,
+schema dumper (Phase 3.5/8), Rails `migration/*` port targets.
 
 **Phase 4 — CRUD + relation semantics.**
 `insert`/`insert_all`/`upsert` semantics (`INSERT ... FORMAT` with batched values),
