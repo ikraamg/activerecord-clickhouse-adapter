@@ -131,18 +131,37 @@ module ActiveRecord
         end
 
         class DateTimeCaster
+          # The server always sends this exact shape; zone.local is 3.3x faster than
+          # zone.parse and allocates a fraction of the memory (benchmarks/BASELINE.md).
+          WIRE_FORMAT = /\A(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d)(?:\.(\d+))?\z/
+
           def initialize(time_zone) = @time_zone = time_zone
 
           def cast(value)
             return value if value.is_a?(Time)
 
-            zone = @time_zone ? ActiveSupport::TimeZone[@time_zone] : default_zone
-            raise ArgumentError, "unknown time zone #{@time_zone.inspect}" if @time_zone && zone.nil?
-
-            zone.parse(value.to_s)
+            string = value.to_s
+            if (match = WIRE_FORMAT.match(string))
+              zone.local(*wall_clock_parts(match))
+            else
+              zone.parse(string)
+            end
           end
 
           private
+
+          def wall_clock_parts(match)
+            seconds = match[6].to_i
+            seconds += Rational(match[7].to_i, 10**match[7].length) if match[7]
+            [match[1].to_i, match[2].to_i, match[3].to_i, match[4].to_i, match[5].to_i, seconds]
+          end
+
+          def zone
+            found = @time_zone ? ActiveSupport::TimeZone[@time_zone] : default_zone
+            raise ArgumentError, "unknown time zone #{@time_zone.inspect}" if @time_zone && found.nil?
+
+            found
+          end
 
           def default_zone
             if ActiveRecord.default_timezone == :local && ::Time.zone
