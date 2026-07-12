@@ -18,6 +18,25 @@ module ActiveRecord
           !READ_QUERY.match?(sql.b)
         end
 
+        EXPLAIN_VARIANTS = {
+          plan: "EXPLAIN", pipeline: "EXPLAIN PIPELINE",
+          estimate: "EXPLAIN ESTIMATE", indexes: "EXPLAIN indexes = 1"
+        }.freeze
+        private_constant :EXPLAIN_VARIANTS
+
+        def explain(arel, binds = [], options = []) # :nodoc:
+          sql = "#{build_explain_clause(options)} #{to_sql(arel, binds)}"
+          result = internal_exec_query(sql, "EXPLAIN", binds)
+          ([result.columns.join("\t")] + result.rows.map { |row| row.join("\t") }).join("\n")
+        end
+
+        def build_explain_clause(options = [])
+          variant = options.first || :plan
+          EXPLAIN_VARIANTS.fetch(variant.to_sym) do
+            raise ArgumentError, "unknown EXPLAIN variant #{variant.inspect}; use #{EXPLAIN_VARIANTS.keys.inspect}"
+          end
+        end
+
         private
 
         def perform_query(raw_connection, sql, binds, type_casted_binds, prepare:, notification_payload:, batch:) # rubocop:disable Lint/UnusedMethodArgument

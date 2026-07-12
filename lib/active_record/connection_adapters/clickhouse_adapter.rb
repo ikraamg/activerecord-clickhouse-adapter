@@ -4,6 +4,7 @@ require "active_record/connection_adapters/abstract_adapter"
 require "active_record/connection_adapters/clickhouse/database_statements"
 require "active_record/connection_adapters/clickhouse/error_translation"
 require "active_record/connection_adapters/clickhouse/http_connection"
+require "active_record/connection_adapters/clickhouse/querying"
 require "active_record/connection_adapters/clickhouse/quoting"
 require "active_record/connection_adapters/clickhouse/schema_definitions"
 require "active_record/connection_adapters/clickhouse/schema_statements"
@@ -48,6 +49,8 @@ module ActiveRecord
         @raw_connection&.close
         @raw_connection = nil
       end
+
+      def supports_explain? = true
 
       def get_database_version # :nodoc:
         Version.new(query_value("SELECT version()", "SCHEMA"))

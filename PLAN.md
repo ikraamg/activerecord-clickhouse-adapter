@@ -64,6 +64,9 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | `mutations_sync=1` as a per-request HTTP param makes mutations block until applied | Iteration 4 live |
 | Rails `insert_all` implies duplicate-skip and correctly raises with `supports_insert_on_duplicate_skip? = false`; `insert_all!` is the plain-INSERT path | Iteration 4 live |
 | `find_each(cursor: [...])` (Rails 8.1) batches pk-less tables over explicit ORDER BY columns | Iteration 4 live |
+| Clause grammar: `FROM t [FINAL] [SAMPLE f] PREWHERE ... WHERE ... ORDER BY ... LIMIT n BY cols LIMIT m SETTINGS ...` — `LIMIT m` before `LIMIT n BY` is a syntax error | Iteration 5 live |
+| `FINAL` on a non-replacing MergeTree raises code 181; `SAMPLE` without `SAMPLE BY` in DDL raises code 141 | Iteration 5 probe |
+| `EXPLAIN` / `EXPLAIN PIPELINE` / `EXPLAIN ESTIMATE` / `EXPLAIN indexes = 1` all return single-String-column result sets over HTTP | Iteration 5 probe |
 
 Local corpora:
 
@@ -264,12 +267,16 @@ Deferred: full Rails `insert_all_test`/`calculations_test` ports into the Phase 
 harness with `skips.yml`; `update`/`save` on loaded records (needs pk semantics decision);
 async insert settings (Phase 8).
 
-**Phase 5 — The ClickHouse dialect (Arel + relation extensions).**
-Visitor support for `FINAL`, `PREWHERE`, `SAMPLE`, `LIMIT BY`, `SETTINGS`, `ARRAY JOIN`,
-`GLOBAL JOIN` modifiers and window functions passthrough; `Relation#final`, `#prewhere`,
-`#settings`, `#sample`, `#limit_by`. `Relation#explain(:plan/:pipeline/:estimate/:indexes)`
-returning real server output (verified format above). Port targets: curated `0_stateless`
-suites for each clause (`02319_lightweight_delete*`, `00409_prewhere*`, sample/limit-by suites).
+**Phase 5 — The ClickHouse dialect (Arel + relation extensions).** *(core done — Iteration 5)*
+Landed: `Relation#final/#sample/#prewhere/#settings/#limit_by` via an opt-in model concern
+(`include ClickHouse::Querying` → `default_scope { extending(RelationMethods) }` — public
+seams only, zero monkeypatches); custom Arel nodes (TableWithModifiers, Prewhere,
+DialectSuffix riding the unused lock slot) rendered by `Arel::Visitors::ClickHouse`;
+`Relation#explain(:plan/:pipeline/:estimate/:indexes)` returning real server output via
+`build_explain_clause`; SETTINGS name validation; LIMIT BY oracle port from
+`00409_shard_limit_by.sql`. 167 examples green.
+Deferred: `ARRAY JOIN`/`GLOBAL JOIN` modifiers, window-function passthrough specs,
+`00409_prewhere` deep ports (basic prewhere proven live).
 
 **Phase 6 — Rails-compat harness at scale.**
 A `rails_compat/` minitest runner that vendors Rails' AR suite (pinned to the local

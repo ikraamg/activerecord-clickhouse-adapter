@@ -5,6 +5,8 @@
 RSpec.describe "End-to-end telemetry spine" do
   subject(:model) do
     Class.new(ActiveRecord::Base) do
+      include ActiveRecord::ConnectionAdapters::ClickHouse::Querying
+
       self.table_name = "spine_events"
 
       def self.name = "SpineEvent"
@@ -88,5 +90,13 @@ RSpec.describe "End-to-end telemetry spine" do
   it "deletes matching rows with a lightweight delete" do
     model.where(device_id: 1).delete_all
     expect(model.pluck(:device_id)).to eq([2])
+  end
+
+  it "scopes a query with per-query SETTINGS" do
+    expect(model.settings(max_threads: 1).count).to eq(3)
+  end
+
+  it "explains index pruning on the sorting key" do
+    expect(model.where(device_id: 1).explain(:indexes).inspect).to include("PrimaryKey")
   end
 end

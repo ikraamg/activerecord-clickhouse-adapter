@@ -30,6 +30,9 @@ Metrics/ParameterLists:
 
 Metrics/MethodLength:
   AllowedMethods: [initialize]
+  # Flat mapping tables (type families, system.columns fields → Column).
+  Exclude:
+    - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
 
 Metrics/ClassLength:
   Exclude:
@@ -48,6 +51,7 @@ Metrics/CyclomaticComplexity:
 Metrics/ModuleLength:
   Exclude:
     - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
+    - lib/active_record/connection_adapters/clickhouse/database_statements.rb
 
 # visit_* names and the `o` parameter are Rails' visitor contracts (SchemaCreation, Arel).
 Naming/MethodName:
@@ -57,11 +61,6 @@ Naming/MethodName:
 
 Naming/MethodParameterName:
   AllowedNames: [o, as, at, by, db, id, in, io, ip, of, on, os, pp, to]
-
-# Flat mapping tables (type families, system.columns fields → Column).
-Metrics/MethodLength:
-  Exclude:
-    - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
 
 Naming/AccessorMethodName:
   Exclude:
