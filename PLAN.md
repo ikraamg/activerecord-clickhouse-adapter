@@ -60,6 +60,10 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | `system.columns.default_expression` returns string literals quoted (`'none'`), function defaults verbatim (`now64(3)`) | Iteration 3 live |
 | Without a Rails env, `InternalMetadata` records environment as the db_config `env_name` (`default_env` for a plain hash config) | Iteration 3 live |
 | TRMNL corpus needs `inflect.acronym "TTL"` (app inflection) for `ReduceLogsTTLToFourteenDays` to resolve | Iteration 3 live |
+| Bare `DELETE FROM t` / `ALTER TABLE t UPDATE ...` without WHERE are syntax errors (code 62) — the visitor appends `WHERE 1` when unscoped | Iteration 4 live |
+| `mutations_sync=1` as a per-request HTTP param makes mutations block until applied | Iteration 4 live |
+| Rails `insert_all` implies duplicate-skip and correctly raises with `supports_insert_on_duplicate_skip? = false`; `insert_all!` is the plain-INSERT path | Iteration 4 live |
+| `find_each(cursor: [...])` (Rails 8.1) batches pk-less tables over explicit ORDER BY columns | Iteration 4 live |
 
 Local corpora:
 
@@ -248,14 +252,17 @@ Deferred: column `codec:`/`materialized:`/`alias:`, skip-index DSL (raw `INDEX` 
 works), materialized views, `db:*` rake tasks via `DatabaseTasks.register_task`,
 schema dumper (Phase 3.5/8), Rails `migration/*` port targets.
 
-**Phase 4 — CRUD + relation semantics.**
-`insert`/`insert_all`/`upsert` semantics (`INSERT ... FORMAT` with batched values),
-lightweight DELETE, mutation UPDATE, `Model.create/find/where/order/limit/pluck/exists?`,
-calculations (`count/sum/average` — watch Decimal/overflow semantics), batches
-(`find_each` keyed on ORDER BY columns, not id). Port targets: Rails `basics_test`,
-`finder_test`, `calculations_test`, `batches_test`, `insert_all_test` — first big use of the
-**skip manifest** (`spec/rails_compat/skips.yml`: every skipped upstream test + one-line reason,
-e.g. "needs unique PK", "needs real transaction").
+**Phase 4 — CRUD + relation semantics.** *(core done — Iteration 4)*
+Landed: `insert_all!` batched INSERT (VALUES with server-side binds); `insert_all`/
+`upsert_all` raise honestly (`supports_insert_on_duplicate_* = false`); `delete_all` →
+lightweight DELETE with `WHERE 1` injected when unscoped; `update_all` → `ALTER TABLE ...
+UPDATE` mutation via the Arel visitor; `mutations_sync` adapter config (HTTP param);
+relation coverage (exists?/find_by/distinct/or/not/limit/offset/multi-pluck/Decimal
+calculations); `find_each(cursor:)` batches without id; lightweight-delete oracle port
+from `02319_lightweight_delete_on_merge_tree.sql`. 146 examples green.
+Deferred: full Rails `insert_all_test`/`calculations_test` ports into the Phase 6 compat
+harness with `skips.yml`; `update`/`save` on loaded records (needs pk semantics decision);
+async insert settings (Phase 8).
 
 **Phase 5 — The ClickHouse dialect (Arel + relation extensions).**
 Visitor support for `FINAL`, `PREWHERE`, `SAMPLE`, `LIMIT BY`, `SETTINGS`, `ARRAY JOIN`,

@@ -1,42 +1,37 @@
-# Iteration 4 (→ ~75%): CRUD + relation semantics
+# Iteration 5 (→ ~85%): the ClickHouse dialect
 
-> Status: ready. Iteration 3 landed schema statements, the migration DSL, internal
-> metadata tables, the migration flow, and the TRMNL corpus acceptance run (16 real
-> migrations verbatim, up and down). 122 examples green, rubocop clean, tree committed.
+> Status: ready. Iteration 4 landed CRUD (insert_all!, lightweight DELETE, ALTER UPDATE
+> mutations, mutations_sync config) and relation coverage incl. cursor batches.
+> 146 examples green, rubocop clean, tree committed.
 
-Read `AGENTS.md` and `PLAN.md` (§4–§6 Phase 4) before writing code.
+Read `AGENTS.md` and `PLAN.md` (§4–§6 Phase 5) before writing code.
 
 ## Goal
 
-Make the write path and relation semantics honest and complete: models can insert
-(single and bulk), delete, and mutate; relations cover the everyday query surface.
+The ClickHouse-specific query surface: FINAL, PREWHERE, SAMPLE, LIMIT BY, SETTINGS on
+relations, plus a real `explain`.
 
 ## Scope
 
-1. **insert_all / upsert semantics.** `Model.insert_all` should batch into a single
-   INSERT (VALUES with binds or FORMAT JSONEachRow — probe which is better).
-   `upsert`/`insert_all unique_by:` must raise `NotImplementedError`-style errors
-   honestly (no fake `supports_insert_on_duplicate_*`).
-2. **delete/delete_all** → lightweight `DELETE FROM` (works on 25.8; the Arel visitor
-   already unqualifies WHERE columns). `Model.delete_all` with no WHERE needs
-   `DELETE FROM t WHERE 1` or TRUNCATE — probe; bare `DELETE FROM t` is code 62.
-3. **update/update_all** → `ALTER TABLE ... UPDATE` mutation (probed working with
-   `mutations_sync=1`). Expose `mutations_sync` as adapter config so specs are
-   deterministic. `Model#update` on a record without a primary key raises — document
-   the semantics for pk-less models (update_all with explicit WHERE is the API).
-4. **Relation coverage:** find_by/exists?/distinct/limit/offset/or/not, calculations
-   (sum/minimum/maximum on Decimal columns — overflow semantics), pluck of multiple
-   columns, `in_batches`/`find_each` keyed on ORDER BY columns (no id!) — probe what
-   Rails does with `batches` on pk-less tables and decide the seam.
-5. **Grow the e2e spine** (`spec/integration/end_to_end_spec.rb`): add bulk insert,
-   delete, update_all, and instrumentation assertions (read_rows/written_rows from the
-   summary — surface via notifications payload if cheap, else defer to Phase 7).
-6. **Port targets:** Rails `insert_all_test`, `calculations_test`, `finder_test`
-   selected cases; ClickHouse `02319_lightweight_delete*` suites. Cite sources in spec
-   descriptions; start `spec/rails_compat/skips.yml` for skipped upstream cases.
+1. **Relation extensions without monkeypatches** (PLAN §9 risk item). Probe the seams
+   first: `ActiveRecord::Relation#extending`, adapter-owned Arel nodes, or annotate-based
+   passthrough. If per-relation state truly has no public seam, a quarantined
+   version-guarded `compat/` prepend with its own spec is the fallback — flag it in the
+   session report either way.
+2. **Arel visitor support** for `FINAL` (table modifier), `PREWHERE`, `SAMPLE`,
+   `LIMIT n BY cols`, `SETTINGS k = v` — each proven live against tables where the
+   clause changes results (ReplacingMergeTree duplicates for FINAL; sampled MergeTree
+   for SAMPLE with `SAMPLE BY` in DDL).
+3. **`Relation#explain`** mapping to `EXPLAIN PLAN/PIPELINE/ESTIMATE/indexes=1`
+   (supports_explain? true; `explain(:indexes)` shows primary-key pruning — grounding
+   fact already probed). Also plain `.explain` default.
+4. **Port targets:** `00409_prewhere*`, sample/limit-by suites from
+   `../clickhouse/tests/queries/0_stateless` — cite in spec descriptions.
+5. **Grow the e2e spine:** add `.final`-style query (or FINAL fallback), `explain`
+   output assertion, and a SETTINGS-scoped query.
 
 ## Boundary checklist
 
 Full suite green + rubocop zero + PLAN.md §2/§6 updated + this file rewritten for
-Iteration 5 (dialect: FINAL/PREWHERE/SAMPLE/SETTINGS/LIMIT BY/explain) + Alchemist
-commits per coherent unit. Never push.
+Iteration 6 (rails-compat harness — the hard stop for review) + Alchemist commits per
+coherent unit. Never push.

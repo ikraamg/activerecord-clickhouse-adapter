@@ -11,7 +11,9 @@ CLICKHOUSE_TEST_CONFIG = {
   port: Integer(ENV.fetch("CLICKHOUSE_HTTP_PORT", 18_123)),
   username: ENV.fetch("CLICKHOUSE_USER", "rails"),
   password: ENV.fetch("CLICKHOUSE_PASSWORD", "rails"),
-  database: ENV.fetch("CLICKHOUSE_DATABASE", "ar_clickhouse_test")
+  database: ENV.fetch("CLICKHOUSE_DATABASE", "ar_clickhouse_test"),
+  # Mutations (ALTER UPDATE/DELETE) block until applied so specs read their own writes.
+  mutations_sync: 1
 }.freeze
 
 ActiveRecord::Base.establish_connection(CLICKHOUSE_TEST_CONFIG)

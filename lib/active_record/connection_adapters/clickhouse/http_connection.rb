@@ -87,7 +87,9 @@ module ActiveRecord
             wait_end_of_query: 1,
             # Defaults corrupt silently: Decimals float-parse lossily, NaN/Inf become null.
             output_format_json_quote_decimals: 1,
-            output_format_json_quote_denormals: 1
+            output_format_json_quote_denormals: 1,
+            # 1/2 make ALTER UPDATE/DELETE mutations block until applied (spec determinism).
+            mutations_sync: @config[:mutations_sync]
           }.merge(params.transform_keys { |key| "param_#{key}" }).compact
         end
 

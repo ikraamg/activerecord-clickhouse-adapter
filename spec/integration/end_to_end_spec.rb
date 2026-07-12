@@ -71,4 +71,22 @@ RSpec.describe "End-to-end telemetry spine" do
     ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { model.count }
     expect(payloads).to include(a_string_including("SELECT COUNT(*)"))
   end
+
+  it "bulk-inserts a batch in one statement" do
+    model.insert_all!([
+                        { device_id: 5, event_type: "checkin" },
+                        { device_id: 5, event_type: "render" }
+                      ])
+    expect(model.where(device_id: 5).count).to eq(2)
+  end
+
+  it "updates matching rows with a mutation" do
+    model.where(event_type: "render").update_all(duration_ms: 0)
+    expect(model.where(event_type: "render").distinct.pluck(:duration_ms)).to eq([0])
+  end
+
+  it "deletes matching rows with a lightweight delete" do
+    model.where(device_id: 1).delete_all
+    expect(model.pluck(:device_id)).to eq([2])
+  end
 end
