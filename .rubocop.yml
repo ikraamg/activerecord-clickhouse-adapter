@@ -38,6 +38,30 @@ Metrics/ClassLength:
 Metrics/AbcSize:
   Exclude:
     - lib/active_record/connection_adapters/clickhouse/types.rb
+    - lib/active_record/connection_adapters/clickhouse/schema_definitions.rb
+
+# Flat type-mapping tables and the breadth of the AR schema contract.
+Metrics/CyclomaticComplexity:
+  Exclude:
+    - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
+
+Metrics/ModuleLength:
+  Exclude:
+    - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
+
+# visit_* names and the `o` parameter are Rails' visitor contracts (SchemaCreation, Arel).
+Naming/MethodName:
+  Exclude:
+    - lib/active_record/connection_adapters/clickhouse/schema_definitions.rb
+    - lib/arel/visitors/clickhouse.rb
+
+Naming/MethodParameterName:
+  AllowedNames: [o, as, at, by, db, id, in, io, ip, of, on, os, pp, to]
+
+# Flat mapping tables (type families, system.columns fields → Column).
+Metrics/MethodLength:
+  Exclude:
+    - lib/active_record/connection_adapters/clickhouse/schema_statements.rb
 
 Naming/AccessorMethodName:
   Exclude:
@@ -61,10 +85,14 @@ RSpec/SpecFilePathFormat:
   Enabled: false
 
 RSpec/ExampleLength:
-  Max: 10
+  Max: 15
 
 RSpec/MultipleExpectations:
   Max: 3
+
+# No transactional fixtures here; before(:all) builds shared read-only DDL fixtures.
+RSpec/BeforeAfterAll:
+  Enabled: false
 
 Gemspec/DevelopmentDependencies:
   EnforcedStyle: Gemfile

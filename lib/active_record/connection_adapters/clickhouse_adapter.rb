@@ -5,8 +5,11 @@ require "active_record/connection_adapters/clickhouse/database_statements"
 require "active_record/connection_adapters/clickhouse/error_translation"
 require "active_record/connection_adapters/clickhouse/http_connection"
 require "active_record/connection_adapters/clickhouse/quoting"
+require "active_record/connection_adapters/clickhouse/schema_definitions"
+require "active_record/connection_adapters/clickhouse/schema_statements"
 require "active_record/connection_adapters/clickhouse/type_parser"
 require "active_record/connection_adapters/clickhouse/types"
+require "arel/visitors/clickhouse"
 
 module ActiveRecord
   module ConnectionAdapters
@@ -15,6 +18,7 @@ module ActiveRecord
 
       include ClickHouse::Quoting
       include ClickHouse::DatabaseStatements
+      include ClickHouse::SchemaStatements
       include ClickHouse::ErrorTranslation
 
       class << self
@@ -23,20 +27,15 @@ module ActiveRecord
         end
       end
 
+      CONNECTION_PARAMETER_KEYS = %i[
+        host port username password database ssl connect_timeout read_timeout write_timeout
+      ].freeze
+
       def initialize(...)
         super
 
-        @connection_parameters = {
-          host: @config.fetch(:host, "localhost"),
-          port: @config.fetch(:port, 8123),
-          username: @config[:username],
-          password: @config[:password],
-          database: @config[:database],
-          ssl: @config[:ssl],
-          connect_timeout: @config[:connect_timeout],
-          read_timeout: @config[:read_timeout],
-          write_timeout: @config[:write_timeout]
-        }.compact
+        @connection_parameters =
+          { host: "localhost", port: 8123 }.merge(@config.slice(*CONNECTION_PARAMETER_KEYS)).compact
       end
 
       def active?
@@ -67,6 +66,8 @@ module ActiveRecord
       # No server-side prepared statements; `true` selects the Arel Bind collector so we can
       # rewrite `?` into ClickHouse `{pN:Type}` HTTP query parameters in perform_query.
       def default_prepared_statements = true
+
+      def arel_visitor = Arel::Visitors::ClickHouse.new(self)
     end
   end
 end

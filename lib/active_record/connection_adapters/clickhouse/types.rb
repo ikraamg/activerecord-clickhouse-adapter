@@ -15,6 +15,28 @@ module ActiveRecord
 
         def caster_for(type_string) = build(TypeParser.parse(type_string))
 
+        # ActiveModel type for schema introspection (Column#type); wrappers unwrap.
+        def active_record_cast_type(type_string) = ar_cast_type(TypeParser.parse(type_string))
+
+        def ar_cast_type(node) # rubocop:disable Metrics/MethodLength, Metrics/CyclomaticComplexity
+          case node.name
+          when "Nullable", "LowCardinality" then ar_cast_type(node.args.fetch(0))
+          when "SimpleAggregateFunction" then ar_cast_type(node.args.fetch(1))
+          when /\AU?Int(8|16|32|64|128|256)\z/ then ActiveModel::Type::Integer.new(limit: Regexp.last_match(1).to_i / 8)
+          when "Float32", "Float64" then ActiveModel::Type::Float.new
+          when "Decimal", "Decimal32", "Decimal64", "Decimal128", "Decimal256"
+            precision, scale = node.args.grep(Integer)
+            ActiveModel::Type::Decimal.new(precision: precision, scale: scale)
+          when "Date", "Date32" then ActiveModel::Type::Date.new
+          when "DateTime" then ActiveModel::Type::DateTime.new
+          when "DateTime64" then ActiveModel::Type::DateTime.new(precision: node.args.first)
+          when "Bool" then ActiveModel::Type::Boolean.new
+          when "String", "FixedString", "Enum8", "Enum16", "UUID", "IPv4", "IPv6" then ActiveModel::Type::String.new
+          when "JSON" then ActiveRecord::Type::Json.new
+          else ActiveModel::Type::Value.new
+          end
+        end
+
         def build(node) # rubocop:disable Metrics/MethodLength, Metrics/CyclomaticComplexity
           case node.name
           when "Nullable" then Nullable.new(build(node.args.fetch(0)))
