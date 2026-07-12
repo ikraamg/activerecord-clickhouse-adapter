@@ -1,35 +1,34 @@
-# Iteration 7 (post-review): expand the compat corpus + schema dumping
+# Iteration 8: compat corpus expansion + schema dumping
 
-> Status: REVIEW SUMMIT REACHED. The Phase 6 rails-compat harness landed
-> (spec/rails_compat/: v8.1.3-pinned vendored suites, skip-manifest ratchet, RSpec
-> wrapper). 168 rspec examples + 41 upstream minitest runs green, rubocop clean,
-> tree committed. Waiting on Ikraam's review before continuing.
+> Status at handoff: 181 rspec examples (incl. 41 upstream minitest runs) green, rubocop
+> clean. Review-summit decisions are resolved and in the ledger (PLAN §5 #13–15).
+> Iteration 7 delivered the Phase 7 performance core: notification stats, gzip
+> compression, benchmarks/BASELINE.md, DateTime fast path, and pk-declared record
+> mutations. The compat-corpus/schema-dumper items below were deferred from the original
+> Iteration 7 brief when the review redirected to performance — they are now the scope.
 
-## Open design questions for the review (blockers for this iteration)
+## Scope
 
-1. **Schema translation rule for upstream suites.** Rails' schema.rb creates hundreds
-   of implicit-id tables. Options: (a) synthesize `order: "id"` + a client-generated
-   id per insert for compat tables only; (b) skip id-dependent suites wholesale in the
-   manifest; (c) a compat-only `id: :uuid` default. Recommendation: (a) for the
-   narrow set of suites we vendor, since it exercises realistic pk-less semantics least.
-2. **Fixture strategy.** Rails fixtures want transactional rollback (impossible) or
-   truncation. Recommendation: truncate-between-tests helper in the shim, mirroring
-   the incumbent gem's test-helper hooks (PLAN §3 "worth keeping").
-3. **`update`/`save` on loaded records** (deferred from Iteration 4): with no pk,
-   `record.update` cannot target a row. Options: raise with guidance (honest), or
-   support it only for models that declare `self.primary_key = ...` explicitly.
-   Recommendation: the latter — it matches ReplacingMergeTree usage patterns.
+1. **Vendor `calculations_test`** (+ its schema slice) using the agreed rules:
+   synthesized `order: "id"` lives in the harness schema only (decision #14),
+   truncate-between-tests in the shim (decision #15). Grow `skips.yml` honestly —
+   one-line reason per skip, manifest may only shrink afterwards.
+2. **Schema dumper**: `schema.rb` round-trip preserving `engine/order/partition/ttl/
+   settings` (custom `SchemaDumper` subclass via the adapter's `create_schema_dumper`
+   seam), and `structure.sql` via `SHOW CREATE TABLE`. Acceptance: dump the TRMNL corpus
+   schema, load it into a scratch database, re-introspect equal.
+3. **`db:*` rake tasks** via `DatabaseTasks.register_task` (create/drop/purge at
+   minimum).
+4. **Grow the e2e spine**: schema dump → load → re-query leg.
 
-## Scope once unblocked
+## Watch out for
 
-1. Apply review feedback.
-2. Vendor `calculations_test` (+ its schema slice) with the agreed schema rule;
-   grow skips.yml honestly.
-3. Schema dumper (`schema.rb` with engine/order/partition options round-trip,
-   `structure.sql` via SHOW CREATE) — Phase 3 deferred item, needed before TRMNL
-   swap-over (Phase 9).
-4. `db:*` rake tasks via `DatabaseTasks.register_task`.
-5. Grow the e2e spine with schema dump → load → re-query.
+- The dumper must not emit `id: false` noise on every table (make it the dumper default)
+  and must keep proc defaults (`-> { "now64(3)" }`) executable.
+- `structure.sql` load path goes through `execute` batches — ClickHouse has no multi-
+  statement support over HTTP; split on statement boundaries.
+- Benchmarks: if the read/write path changes, re-run `bundle exec ruby
+  benchmarks/round_trip.rb` and update `benchmarks/BASELINE.md` (history section).
 
 ## Boundary checklist
 

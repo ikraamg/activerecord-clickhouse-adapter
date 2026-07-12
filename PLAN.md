@@ -68,6 +68,9 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | `FINAL` on a non-replacing MergeTree raises code 181; `SAMPLE` without `SAMPLE BY` in DDL raises code 141 | Iteration 5 probe |
 | `EXPLAIN` / `EXPLAIN PIPELINE` / `EXPLAIN ESTIMATE` / `EXPLAIN indexes = 1` all return single-String-column result sets over HTTP | Iteration 5 probe |
 | minitest 6 (Ruby 4 default) extracted `minitest/mock` to a separate gem — Rails 8.1 test helpers need minitest ~> 5.25 | Iteration 6 |
+| `enable_http_compression=1` gzips response bodies ~3.6x smaller (789 KB → 216 KB on a 100k-row select); Net::HTTP sends `Accept-Encoding: gzip` by default and decompresses transparently, **including error bodies** | Iteration 7 probe |
+| `count()` on MergeTree is answered from metadata (`optimize_trivial_count_query`): summary reports `read_rows: 1` — instrumentation assertions need a real column aggregation | Iteration 7 live |
+| Wire DateTime shape is always `YYYY-MM-DD HH:MM:SS[.fraction]`; `zone.local` on regexp captures is 3.3x faster than `zone.parse` and was the read path's top allocator (17.7 of 43.2 MB per 10k-row select) | Iteration 7 benchmark |
 
 Local corpora:
 
@@ -219,6 +222,17 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
 12. **Coexistence.** Adapter name `"clickhouse"` collides with the PNixx gem by design —
     it is a drop-in replacement; both cannot be loaded at once. Migration guide ships in
     the README.
+13. **Record-level mutations require an explicit primary key** *(reviewed 2026-07-12)*.
+    `record.update/save/destroy` work when the model declares `self.primary_key`
+    (the ReplacingMergeTree pattern where the sorting key is unique by design); models
+    without one stay read-mostly — `update_all`/`delete_all` with explicit WHERE are the
+    API. No synthetic ids, no silent no-ops.
+14. **Compat-suite schema translation** *(reviewed 2026-07-12)*: vendored upstream suites
+    that need implicit-id tables get a synthesized `order: "id"` in the harness's schema
+    slice only — never in the adapter itself.
+15. **Compat-suite fixtures** *(reviewed 2026-07-12)*: truncate-between-tests in the
+    harness shim (no transactional rollback exists to lean on), mirroring the incumbent
+    gem's consumer-facing test-helper hooks.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -290,18 +304,19 @@ Next expansions (post-review): suites needing schema/fixtures (`basics_test`,
 `calculations_test`, `insert_all_test`) — these need a schema-translation rule
 (implicit-id tables) and a fixture strategy; both are open design questions below.
 
-**Phase 7 — Performance program.**
-- `benchmarks/` with benchmark-ips + memory_profiler: 100k-row typed SELECT
-  (JSONCompact vs RowBinary), 100k-row `insert_all` (VALUES vs RowBinary stream vs async
-  insert), allocation counts per row decoded.
-- RowBinary read/write codec (port the codec tables from `plausible/ch` and the
-  format spec in `../clickhouse/src/Formats`), adopted per-type only where it wins.
-- HTTP compression (`enable_http_compression=1`, zstd), streaming `read_body` decode,
-  keep-alive tuning; committed baseline JSON in `benchmarks/results/` so regressions are
-  diffs, not vibes.
-- Instrumentation: `sql.active_record` notification payload gains
-  `clickhouse: {read_rows:, read_bytes:, elapsed_ns:, query_id:}`; optional
-  `system.query_log` cross-check helper for specs ("the server really read N rows").
+**Phase 7 — Performance program.** *(core done — Iteration 7)*
+Landed: `sql.active_record` payload gains `clickhouse: {query_id:, read_rows:, read_bytes:,
+written_rows:, elapsed_ns:}` from `X-ClickHouse-Summary` (spec/clickhouse/
+instrumentation_spec.rb + e2e spine assertions); HTTP gzip compression on by default
+(`enable_http_compression=1`, `compression: false` opt-out, error bodies verified readable);
+`benchmarks/round_trip.rb` (benchmark-ips + memory_profiler) with the committed baseline in
+`benchmarks/BASELINE.md`; DateTimeCaster wire-format fast path (`zone.local` over
+`zone.parse`) — 10k-row typed select went 5.3 → 13.2 i/s and 43.2 → 26.6 MB allocated.
+Also landed this iteration: record-level `update/save/destroy` for models declaring
+`self.primary_key` (decision #13). 181 examples green.
+Deferred (benchmark-gated, per BASELINE.md): RowBinary codec — JSON.parse is now ~4 MB of
+a 26.6 MB profile, not the bottleneck; zstd; streaming `read_body` decode; async inserts
+(Phase 8); `system.query_log` cross-check helper.
 
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
