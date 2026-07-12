@@ -33,6 +33,24 @@ RSpec.describe "ClickHouse server-side binds" do
     expect(connection.select_one("SELECT ? AS `odd?name`", nil, [1])).to eq("odd?name" => 1)
   end
 
+  # Probed 2026-07-12: the server parses String params in its escaped format — a raw
+  # newline or tab raises BAD_QUERY_PARAMETER (code 457); backslash sequences round-trip.
+  it "round-trips a string containing newlines" do
+    expect(connection.select_value("SELECT ?", nil, ["---\nfoo: bar\n"])).to eq("---\nfoo: bar\n")
+  end
+
+  it "round-trips a string containing tabs" do
+    expect(connection.select_value("SELECT ?", nil, ["a\tb"])).to eq("a\tb")
+  end
+
+  it "round-trips a string containing literal backslash-n" do
+    expect(connection.select_value("SELECT ?", nil, ['a\nb'])).to eq('a\nb')
+  end
+
+  it "round-trips a string containing backslashes and quotes" do
+    expect(connection.select_value("SELECT ?", nil, ["it's a \\ backslash"])).to eq("it's a \\ backslash")
+  end
+
   it "round-trips an integer beyond UInt64 without wrapping" do
     expect(connection.select_value("SELECT ?", nil, [2**70])).to eq(2**70)
   end

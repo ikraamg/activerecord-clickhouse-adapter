@@ -31,7 +31,7 @@ module ActiveRecord
 
       CONNECTION_PARAMETER_KEYS = %i[
         host port username password database ssl connect_timeout read_timeout write_timeout
-        mutations_sync compression
+        mutations_sync compression join_use_nulls
       ].freeze
 
       def initialize(...)

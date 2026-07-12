@@ -130,9 +130,12 @@ module ActiveRecord
           def cast(value) = value.is_a?(Date) ? value : Date.parse(value.to_s)
         end
 
+        # Returns plain Time instances (like every built-in adapter's database layer);
+        # TimeWithZone wrapping belongs to the attribute layer.
         class DateTimeCaster
-          # The server always sends this exact shape; zone.local is 3.3x faster than
-          # zone.parse and allocates a fraction of the memory (benchmarks/BASELINE.md).
+          # The server always sends this exact shape; building the Time directly is 3.3x
+          # faster than zone.parse and allocates a fraction of the memory
+          # (benchmarks/BASELINE.md).
           WIRE_FORMAT = /\A(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d)(?:\.(\d+))?\z/
 
           def initialize(time_zone) = @time_zone = time_zone
@@ -142,13 +145,18 @@ module ActiveRecord
 
             string = value.to_s
             if (match = WIRE_FORMAT.match(string))
-              zone.local(*wall_clock_parts(match))
+              time_from_wall_clock(wall_clock_parts(match))
             else
-              zone.parse(string)
+              zone.parse(string).utc
             end
           end
 
           private
+
+          def time_from_wall_clock(parts)
+            found = zone
+            found.name == "UTC" ? ::Time.utc(*parts) : found.local(*parts).utc
+          end
 
           def wall_clock_parts(match)
             seconds = match[6].to_i

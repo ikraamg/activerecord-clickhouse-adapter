@@ -102,6 +102,9 @@ module ActiveRecord
             output_format_json_quote_denormals: 1,
             # 1/2 make ALTER UPDATE/DELETE mutations block until applied (spec determinism).
             mutations_sync: @config[:mutations_sync],
+            # ClickHouse fills non-matched outer-join columns with type defaults (0, '');
+            # every other AR adapter returns SQL NULLs, so default to standard semantics.
+            join_use_nulls: @config.fetch(:join_use_nulls, 1),
             # Server gzips responses ~3.6x smaller; Net::HTTP decompresses transparently
             # (it sends Accept-Encoding: gzip by default). Probed 2026-07-12, PLAN.md §2.
             enable_http_compression: @config.fetch(:compression, true) ? 1 : 0

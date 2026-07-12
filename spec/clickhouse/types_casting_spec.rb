@@ -87,6 +87,16 @@ RSpec.describe "ClickHouse type casting", :aggregate_failures do
     expect(time.utc.strftime("%Y-%m-%d %H:%M:%S.%N")).to eq("2024-06-15 12:30:45.123456789")
   end
 
+  # Rails adapters return plain Time from the database layer; TimeWithZone wrapping is
+  # the attribute layer's job (upstream calculations_test asserts instance_of Time).
+  it "casts DateTime64 to a plain Time instance" do
+    expect(select_value("SELECT toDateTime64('2024-06-15 12:30:45.5', 3, 'UTC')")).to be_an_instance_of(Time)
+  end
+
+  it "casts timezone-labelled DateTime to a plain Time instance" do
+    expect(select_value("SELECT toDateTime('2024-06-15 12:30:45', 'Asia/Tokyo')")).to be_an_instance_of(Time)
+  end
+
   it "casts UUID as canonical string" do
     expect(select_value("SELECT toUUID('550e8400-e29b-41d4-a716-446655440000')"))
       .to eq("550e8400-e29b-41d4-a716-446655440000")

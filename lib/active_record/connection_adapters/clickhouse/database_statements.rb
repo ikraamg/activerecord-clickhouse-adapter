@@ -37,6 +37,16 @@ module ActiveRecord
           end
         end
 
+        # The abstract version wraps bare DELETEs in a transaction; ClickHouse has
+        # neither, so fixtures load as TRUNCATE + batched INSERTs.
+        def insert_fixtures_set(fixture_set, tables_to_delete = [])
+          statements = tables_to_delete.map { |table| build_truncate_statement(table) }
+          statements += fixture_set.filter_map do |table_name, fixtures|
+            build_fixture_sql(fixtures, table_name) unless fixtures.empty?
+          end
+          statements.each { |statement| execute(statement, "Fixtures Load") }
+        end
+
         private
 
         def perform_query(raw_connection, sql, binds, type_casted_binds, prepare:, notification_payload:, batch:) # rubocop:disable Lint/UnusedMethodArgument
@@ -106,12 +116,20 @@ module ActiveRecord
           "{#{name}:#{clickhouse_bind_type(binds.fetch(index), type_casted_binds.fetch(index))}}"
         end
 
+        # The server reads String params in its escaped format: raw newlines/tabs raise
+        # BAD_QUERY_PARAMETER and a literal backslash-n would silently become a newline.
+        PARAM_ESCAPES = { "\\" => "\\\\", "\n" => "\\n", "\t" => "\\t", "\r" => "\\r", "\0" => "\\0" }.freeze
+        PARAM_ESCAPE_PATTERN = /[\\\n\t\r\0]/
+        private_constant :PARAM_ESCAPES, :PARAM_ESCAPE_PATTERN
+
         # Adapter-level type_cast already stringifies Date/Time (with subseconds) and
         # BigDecimal before values reach here.
         def format_query_param(value)
           case value
           when true, false then value
-          else value.to_s
+          else
+            string = value.to_s
+            string.match?(PARAM_ESCAPE_PATTERN) ? string.gsub(PARAM_ESCAPE_PATTERN, PARAM_ESCAPES) : string
           end
         end
 
