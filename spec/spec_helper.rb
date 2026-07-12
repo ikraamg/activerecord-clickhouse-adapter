@@ -2,6 +2,8 @@
 
 require "activerecord-clickhouse-adapter"
 
+SPEC_ROOT = Pathname.new(__dir__)
+
 # Real server only — no mocks. Boot it with: docker compose up -d --wait
 CLICKHOUSE_TEST_CONFIG = {
   adapter: "clickhouse",
