@@ -71,6 +71,14 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | `enable_http_compression=1` gzips response bodies ~3.6x smaller (789 KB → 216 KB on a 100k-row select); Net::HTTP sends `Accept-Encoding: gzip` by default and decompresses transparently, **including error bodies** | Iteration 7 probe |
 | `count()` on MergeTree is answered from metadata (`optimize_trivial_count_query`): summary reports `read_rows: 1` — instrumentation assertions need a real column aggregation | Iteration 7 live |
 | Wire DateTime shape is always `YYYY-MM-DD HH:MM:SS[.fraction]`; `zone.local` on regexp captures is 3.3x faster than `zone.parse` and was the read path's top allocator (17.7 of 43.2 MB per 10k-row select) | Iteration 7 benchmark |
+| String HTTP query params use the escaped format: `\n`/`\t`/`\r`/`\0`/`\` must be sent as `\\n`/`\\t`/`\\r`/`\\0`/`\\\\`, else "cannot be parsed as String ... isn't parsed completely" (code 457) | Iteration 8 probe |
+| Default `join_use_nulls=0` fills unmatched LEFT JOIN columns with type defaults (0, ''), not NULL — breaks Rails aggregate semantics; adapter now sends `join_use_nulls=1` by default (configurable) | Iteration 8 live |
+| `system.tables.engine_full` carries the full `ENGINE ... PARTITION BY ... ORDER BY ... TTL ... SETTINGS ...` clause chain, splittable on clause keywords for the schema dumper | Iteration 8 live |
+| No functional-dependency GROUP BY: `SELECT t.* GROUP BY t.id` raises NOT_AN_AGGREGATE (code 215) even when id is the primary key | Iteration 8 live |
+| Self-join with an unaliased base table (`FROM topics JOIN topics AS replies_topics ON ...`) raises AMBIGUOUS_IDENTIFIER (code 207) | Iteration 8 live |
+| Database-level DDL error codes verified live: 82 DATABASE_ALREADY_EXISTS, 81 UNKNOWN_DATABASE | Iteration 8 live |
+| Rails' default `insert_fixtures_set` issues bare `DELETE FROM t` (syntax error here) inside a transaction; the adapter overrides it with TRUNCATE + per-table batched INSERTs | Iteration 8 live |
+| `create!` without an explicit id stores the column default (0) and leaves the AR object's id nil — no autoincrement, no `INSERT ... RETURNING`; client-side id generation is an open question (§9) | Iteration 8 live |
 
 Local corpora:
 
@@ -233,6 +241,17 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
 15. **Compat-suite fixtures** *(reviewed 2026-07-12)*: truncate-between-tests in the
     harness shim (no transactional rollback exists to lean on), mirroring the incumbent
     gem's consumer-facing test-helper hooks.
+16. **`join_use_nulls=1` by default** *(Iteration 8)*: ClickHouse's native default fills
+    unmatched outer-join columns with type defaults (0, ''), which silently corrupts
+    Rails aggregate/pluck semantics. The adapter sends `join_use_nulls=1` on every
+    request for SQL-standard NULLs; `join_use_nulls: 0` in `database.yml` opts back out.
+17. **Fixture loading bypasses transactions** *(Iteration 8)*: `insert_fixtures_set`
+    is overridden to TRUNCATE the target tables and replay each table as one batched
+    INSERT — Rails' default path wraps bare `DELETE FROM` in a transaction, and neither
+    exists here.
+18. **Adapter returns plain `Time`** *(Iteration 8)*: the DateTime caster yields `Time`
+    instances (UTC instants), matching every built-in adapter's database layer;
+    `TimeWithZone` wrapping stays in the attribute layer where Rails puts it.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -318,6 +337,25 @@ Deferred (benchmark-gated, per BASELINE.md): RowBinary codec — JSON.parse is n
 a 26.6 MB profile, not the bottleneck; zstd; streaming `read_body` decode; async inserts
 (Phase 8); `system.query_log` cross-check helper.
 
+**Phase 3.5 — Schema dumper + database tasks.** *(done — Iteration 8)*
+Landed: `ClickHouse::SchemaDumper` (create_schema_dumper seam) dumping engine/partition/
+order/ttl/settings from `system.tables.engine_full`, AR-native column types only when
+`type_to_sql` regenerates the server type exactly (else verbatim ClickHouse type strings),
+`low_cardinality:`/`null:` options, data-skipping indexes with `using:`/`granularity:`
+(`supports_indexes_in_create?` + `index_in_create`); byte-identical re-dump proven for the
+spec tables **and the TRMNL corpus**; `ClickHouseDatabaseTasks` registered via
+`DatabaseTasks.register_task` (db:create/drop/purge honoring codes 82/81, structure
+dump/load via `SHOW CREATE TABLE`); e2e spine gained the dump → load → re-query leg.
+
+**Phase 6 (cont.) — calculations_test corpus.** *(landed — Iteration 8; review summit)*
+`calculations_test` vendored byte-exact (22 models, 11 fixture sets, hand-translated
+~27-table schema slice); fixtures load through a TRUNCATE-based `insert_fixtures_set`
+override; helper shim grew fixtures/capture_sql/with_timezone_config/QUOTED_TYPE.
+Unlocked along the way: String bind escaping, `join_use_nulls=1` default, plain-Time
+DateTimeCaster, datetime precision 6 in the slice. **273 runs, 0 failures, 24 skips**
+— every skip categorized in `skips.yml`: 5 functional-dependency GROUP BY, 1 self-join
+ambiguity, 16 no-autoincrement (decision #14), 2 upstream-conditional.
+
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
 round-robin with health-aware failover, async insert settings, TLS verification ON by
@@ -355,7 +393,14 @@ prod-like docker sandbox e2e. README (ankane style), CHANGELOG, CI matrix
 - **Rails-suite fixture load** requires transactional wrapping by default — the compat
   harness must force non-transactional fixtures + table truncation; some suites may be
   permanently manifest-skipped. Acceptable: the manifest documents the database's honest
-  semantics.
+  semantics. *(Resolved Iteration 8: TRUNCATE-based `insert_fixtures_set` override,
+  `use_transactional_tests = false` in the shim — calculations_test runs clean.)*
+- **Client-side primary-key generation** (open, for Ikraam): 16 calculations_test skips
+  trace to `create!` without an explicit id leaving id=0/nil. Options: (a) adapter-level
+  `prefetch_primary_key?` + `next_sequence_value` generating UUIDv7/snowflake ids for
+  models that opt in, (b) a harness-only `before_create` shim (keeps the adapter honest,
+  compat suite stays skipped), (c) document "bring your own id" as the contract.
+  ecto_ch does (c); the incumbent gem silently returns id 0.
 - **RowBinary in pure Ruby** may not beat Oj/JSON parsing for string-heavy sets — that's why
   the codec is pluggable and benchmark-gated; a native extension is explicitly out of scope
   until pure Ruby is proven insufficient.
