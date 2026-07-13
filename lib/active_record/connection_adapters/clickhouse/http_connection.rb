@@ -59,10 +59,46 @@ module ActiveRecord
           @http = build_http
         end
 
+        # Adapts an enumerator of encoded lines to the partial-read IO contract
+        # Net::HTTP uses for chunked transfer encoding, so a streamed INSERT never
+        # holds more than one chunk of the body in memory.
+        class ChunkedBody
+          CHUNK_BYTES = 64 * 1024
+
+          def initialize(lines)
+            @lines = lines
+            @buffer = +""
+          end
+
+          def read(length = CHUNK_BYTES, out = +"")
+            buffer_lines(length)
+            return nil if @buffer.empty?
+
+            out.replace(@buffer.slice!(0, length))
+          end
+
+          private
+
+          def buffer_lines(length)
+            @buffer << @lines.next << "\n" while @buffer.bytesize < length
+          rescue StopIteration
+            nil
+          end
+        end
+
         def execute(sql, params: {})
           parse(perform(sql, params, @select_format), @select_format)
         rescue RowBinary::Undecodable
           parse(perform(sql, params, JSON_FORMAT), JSON_FORMAT)
+        end
+
+        # Streams pre-encoded body lines as one chunked POST; the statement travels
+        # in the query string because the request body is the data.
+        def execute_stream(sql, lines)
+          request = post_request(query_params({}, JSON_FORMAT).merge(query: sql))
+          request["Transfer-Encoding"] = "chunked"
+          request.body_stream = ChunkedBody.new(lines)
+          parse(raise_unless_success(@http.request(request)), JSON_FORMAT)
         end
 
         # Scopes extra server settings to the requests made inside the block — the

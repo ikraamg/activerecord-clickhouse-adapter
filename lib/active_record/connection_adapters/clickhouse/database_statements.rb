@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "date"
+require "json"
 require "securerandom"
 require "strscan"
 
@@ -35,6 +36,19 @@ module ActiveRecord
             end
           end
           with_raw_connection { |raw_connection| raw_connection.with_request_settings(settings, &block) }
+        end
+
+        # Bulk ingestion without materializing the batch: rows (any Enumerable of
+        # Hashes, lazy included) stream to the server as one chunked
+        # JSONCompactEachRow INSERT. Returns the server-reported written row count.
+        def insert_stream(table_name, rows, columns: nil)
+          column_names = columns || stream_column_names(rows)
+          sql = insert_stream_sql(table_name, column_names)
+          lines = Enumerator.new do |yielder|
+            rows.each { |row| yielder << encoded_stream_row(row, column_names) }
+          end
+
+          stream_lines(sql, "#{table_name} Stream Insert", lines)
         end
 
         def explain(arel, binds = [], options = []) # :nodoc:
@@ -233,6 +247,44 @@ module ActiveRecord
           raise ActiveRecordError, "cannot generate a primary key for #{sequence_name.inspect}: " \
                                    "the table's sorting key must be that single column, typed " \
                                    "at least 64 bits wide or UUID; assign ids explicitly instead"
+        end
+
+        def stream_lines(sql, name, lines)
+          log(sql, name) do |notification_payload|
+            with_raw_connection do |raw_connection|
+              result = raw_connection.execute_stream(sql, lines)
+              verified!
+              notification_payload[:clickhouse] = result.stats
+              result.written_rows
+            end
+          end
+        end
+
+        def stream_column_names(rows)
+          first_row = rows.first
+          raise ArgumentError, "insert_stream got no rows" unless first_row
+
+          first_row.keys
+        end
+
+        def insert_stream_sql(table_name, column_names)
+          quoted = column_names.map { |name| quote_column_name(name) }.join(", ")
+          "INSERT INTO #{quote_table_name(table_name)} (#{quoted}) FORMAT JSONCompactEachRow"
+        end
+
+        def encoded_stream_row(row, column_names)
+          JSON.generate(column_names.map { |name| encoded_stream_value(row[name]) })
+        end
+
+        # JSONCompactEachRow input casts strings server-side; only the types whose
+        # default Ruby JSON form the server misreads need explicit encoding.
+        def encoded_stream_value(value)
+          case value
+          when Time, DateTime then quoted_date(value)
+          when Date then value.to_s
+          when BigDecimal then value.to_s("F")
+          else value
+          end
         end
 
         def perform_query(raw_connection, sql, binds, type_casted_binds, prepare:, notification_payload:, batch:) # rubocop:disable Lint/UnusedMethodArgument

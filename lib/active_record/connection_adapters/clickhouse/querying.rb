@@ -319,6 +319,12 @@ module ActiveRecord
           delegate :final, :sample, :prewhere, :settings, :limit_by, :array_join,
                    :group_by_period, :fill, :rollup, :uniq_count, :quantile,
                    :top_k, :arg_max, :arg_min, :estimated_count, to: :all
+
+          # insert_all's streaming sibling: the batch goes over the wire as one
+          # chunked INSERT instead of being rendered into a SQL string first.
+          def insert_stream(rows, columns: nil)
+            with_connection { |connection| connection.insert_stream(table_name, rows, columns: columns) }
+          end
         end
       end
     end
