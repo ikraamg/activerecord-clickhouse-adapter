@@ -23,6 +23,15 @@ module ActiveRecord
           string.gsub(/[\\']/) { |char| char == "\\" ? "\\\\" : "\\'" }
         end
 
+        # DateTime64 stores an epoch and the server parses naive strings in its own
+        # timezone (UTC here); params reject offsets outright (code 457, PLAN.md §2).
+        # UTC is therefore the only faithful wire encoding, whatever default_timezone says.
+        def quoted_date(value)
+          value = value.getutc if value.acts_like?(:time) && !value.utc?
+          result = value.to_fs(:db)
+          value.respond_to?(:usec) && value.usec.positive? ? "#{result}.#{format("%06d", value.usec)}" : result
+        end
+
         def quoted_true = "true"
         def quoted_false = "false"
         def unquoted_true = true

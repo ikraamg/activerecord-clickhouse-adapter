@@ -32,6 +32,29 @@ RSpec.describe "ClickHouse quoting" do
     expect(connection.quote("k" => 1)).to eq("{'k': 1}")
   end
 
+  # DateTime64 stores an epoch and the server parses naive strings in its own timezone
+  # (UTC here), so UTC is the only faithful wire encoding — under default_timezone
+  # :local the abstract quoted_date would emit local wall-clock and shift the instant.
+  describe "quoted_date under default_timezone :local" do
+    around do |example|
+      original = ActiveRecord.default_timezone
+      ActiveRecord.default_timezone = :local
+      example.run
+    ensure
+      ActiveRecord.default_timezone = original
+    end
+
+    it "still encodes the UTC wall-clock" do
+      moment = Time.utc(2003, 7, 16, 14, 28, 11).getlocal("+04:00")
+      expect(connection.quoted_date(moment)).to eq("2003-07-16 14:28:11")
+    end
+
+    it "keeps fractional seconds" do
+      moment = Time.utc(2003, 7, 16, 14, 28, 11, 223_300).getlocal("+04:00")
+      expect(connection.quoted_date(moment)).to eq("2003-07-16 14:28:11.223300")
+    end
+  end
+
   it "round-trips a quoted injection payload via SELECT" do
     sql = "SELECT #{connection.quote("'; DROP TABLE users; --")}"
     expect(connection.select_value(sql)).to eq("'; DROP TABLE users; --")
