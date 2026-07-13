@@ -20,6 +20,19 @@ CalculationsTest:
   test_pluck_with_qualified_name_on_loaded: >-
     self-join with unaliased base table raises AMBIGUOUS_IDENTIFIER
 
+FinderTest:
+  test_include_on_unloaded_relation_with_having_referencing_aliased_select: >-
+    SELECT t.* GROUP BY t.id needs functional-dependency GROUP BY (NOT_AN_AGGREGATE)
+  test_joins_dont_clobber_id: >-
+    self-join with unaliased base table raises AMBIGUOUS_IDENTIFIER
+
+  # DateTime64 params reject timezone offsets and columns store naive UTC wall-clock
+  # (probed 2026-07-13); comparing under default_timezone :local cannot match.
+  test_condition_utc_time_interpolation_with_default_timezone_local: >-
+    adapter stores and compares DateTime64 as naive UTC; default_timezone :local unsupported
+  test_hash_condition_utc_time_interpolation_with_default_timezone_local: >-
+    adapter stores and compares DateTime64 as naive UTC; default_timezone :local unsupported
+
 InsertAllTest:
   # These three exercise semantics ClickHouse does not have: unique constraints and
   # ON CONFLICT handling. The adapter raises honestly from insert_all/upsert_all

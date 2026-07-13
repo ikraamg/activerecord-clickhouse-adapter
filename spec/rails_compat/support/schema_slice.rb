@@ -10,20 +10,26 @@
 #   - upstream `primary_key:` options become model-level primary keys via PRIMARY_KEYS.
 module ARCompat
   module SchemaSlice
-    # Tables whose upstream schema declares an explicit primary_key option.
+    # Tables whose upstream schema declares an explicit primary_key option; nil marks
+    # tables whose models must stay primary-key-less even though an id column exists
+    # (upstream declares them id: false).
     PRIMARY_KEYS = {
       "cpk_books" => %i[author_id id],
-      "cpk_chapters" => %i[author_id id]
+      "cpk_chapters" => %i[author_id id],
+      "non_primary_keys" => nil
     }.freeze
 
     # Tables the harness must reset between tests beyond the fixture tables, which
     # reload every test anyway (decision #15: truncation, no transactions to roll back).
     TABLES = %w[
-      1_need_quoting accounts audit_logs author_addresses authors books carts clubs
-      comments companies contracts cpk_books cpk_chapters developers edges having
-      minivans numeric_data organizations posts ratings ship_parts ships speedometers
-      subscribers subscriptions topics
-      toooooooooooooooooooooooooooooooooo_long_table_names treasures
+      1_need_quoting accounts audit_logs author_addresses authors books cars carts
+      categories categories_posts categorizations clothing_items clubs comments companies computers
+      computers_developers contracts
+      cpk_books cpk_chapters cpk_reviews customers developers developers_projects
+      dog_lovers dogs edges entrants having mateys minivans non_primary_keys
+      numeric_data organizations posts projects ratings ship_parts ships speedometers
+      subscribers subscriptions taggings tags tires topics
+      toooooooooooooooooooooooooooooooooo_long_table_names toys treasures
     ].freeze
 
     module_function
@@ -94,11 +100,55 @@ module ARCompat
         t.date :updated_on, null: true
       end
 
+      connection.create_table :cars, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :person_id, limit: 8, null: true
+        t.string :name, null: true
+        t.integer :engines_count, null: true
+        t.integer :wheels_count, default: 0
+        t.datetime :wheels_owned_at, precision: 6, null: true
+        t.integer :bulbs_count, null: true
+        t.integer :custom_tires_count, null: true
+        t.integer :lock_version, default: 0
+        t.datetime :created_at, precision: 6
+        t.datetime :updated_at, precision: 6
+      end
+
       # shop_id joins the sorting key, so it stays non-nullable (allow_nullable_key is off).
       connection.create_table :carts, force: true, order: "(shop_id, id)" do |t|
         t.integer :id, limit: 8
         t.integer :shop_id, limit: 8
         t.string :title, null: true
+      end
+
+      connection.create_table :categories, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name
+        t.string :type, null: true
+        t.integer :categorizations_count, null: true
+      end
+
+      connection.create_table :categories_posts, force: true, order: "(category_id, post_id)" do |t|
+        t.integer :category_id, limit: 8
+        t.integer :post_id, limit: 8
+      end
+
+      connection.create_table :categorizations, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :category_id, limit: 8, null: true
+        t.string :named_category_name, null: true
+        t.integer :post_id, limit: 8, null: true
+        t.integer :author_id, limit: 8, null: true
+        t.boolean :special, null: true
+      end
+
+      connection.create_table :clothing_items, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :clothing_type, null: true
+        t.string :color, null: true
+        t.string :type, null: true
+        t.string :size, null: true
+        t.string :description, null: true
       end
 
       connection.create_table :clubs, force: true, order: "id" do |t|
@@ -125,7 +175,9 @@ module ARCompat
         t.integer :developer_id, limit: 8, null: true
         t.datetime :updated_at, precision: 6, null: true
         t.datetime :deleted_at, precision: 6, null: true
-        t.integer :comments, null: true
+        # Upstream also has a `comments` column; ClickHouse's analyzer resolves the
+        # qualified matcher `comments.*` to a column named like its own table and fails
+        # (probed 2026-07-13, UNSUPPORTED_METHOD), so that column stays out of the slice.
         t.integer :company, null: true
       end
 
@@ -166,6 +218,41 @@ module ARCompat
         t.string :title, null: true
       end
 
+      connection.create_table :computers, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :system, null: true
+        t.integer :developer, limit: 8
+        t.integer :extendedWarranty, default: 0
+        t.integer :timezone, null: true
+        t.datetime :created_at, precision: 6, null: true
+        t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :computers_developers, force: true, order: "(computer_id, developer_id)" do |t|
+        t.integer :computer_id, limit: 8
+        t.integer :developer_id, limit: 8
+        t.datetime :created_at, precision: 6, null: true
+        t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :cpk_reviews, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :author_id, limit: 8, null: true
+        t.integer :number, null: true
+        t.integer :rating, null: true
+        t.string :comment, null: true
+      end
+
+      connection.create_table :customers, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :balance, null: true, default: 0
+        t.string :address_street, null: true
+        t.string :address_city, null: true
+        t.string :address_country, null: true
+        t.string :gps_location, null: true
+      end
+
       connection.create_table :developers, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
@@ -179,14 +266,48 @@ module ARCompat
         t.datetime :legacy_updated_on, precision: 6, null: true
       end
 
+      connection.create_table :developers_projects, force: true, order: "(developer_id, project_id)" do |t|
+        t.integer :developer_id, limit: 8
+        t.integer :project_id, limit: 8
+        t.date :joined_on, null: true
+        t.integer :access_level, null: true, default: 1
+      end
+
+      connection.create_table :dog_lovers, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :trained_dogs_count, null: true, default: 0
+        t.integer :bred_dogs_count, null: true, default: 0
+        t.integer :dogs_count, null: true, default: 0
+      end
+
+      connection.create_table :dogs, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :trainer_id, limit: 8, null: true
+        t.integer :breeder_id, limit: 8, null: true
+        t.integer :dog_lover_id, limit: 8, null: true
+        t.string :alias, null: true
+      end
+
       connection.create_table :edges, force: true, order: "(source_id, sink_id)" do |t|
         t.integer :source_id, limit: 8
         t.integer :sink_id, limit: 8
       end
 
+      connection.create_table :entrants, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name
+        t.integer :course_id, limit: 8
+      end
+
       connection.create_table :having, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :where, null: true
+      end
+
+      connection.create_table :mateys, force: true, order: "(pirate_id, target_id)" do |t|
+        t.integer :pirate_id, limit: 8
+        t.integer :target_id, limit: 8
+        t.integer :weight, null: true
       end
 
       connection.create_table :minivans, force: true, order: "minivan_id" do |t|
@@ -212,6 +333,13 @@ module ARCompat
         t.decimal :atoms_in_universe, precision: 55, scale: 0, null: true
       end
 
+      # Upstream declares non_primary_keys id: false with a plain id column — the model
+      # must stay primary-key-less (PRIMARY_KEYS maps it to nil).
+      connection.create_table :non_primary_keys, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.datetime :created_at, precision: 6, null: true
+      end
+
       connection.create_table :organizations, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
@@ -230,6 +358,14 @@ module ARCompat
         t.integer :indestructible_tags_count, null: true, default: 0
         t.integer :tags_with_destroy_count, null: true, default: 0
         t.integer :tags_with_nullify_count, null: true, default: 0
+      end
+
+      connection.create_table :projects, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.string :type, null: true
+        t.integer :firm_id, limit: 8, null: true
+        t.integer :mentor_id, limit: 8, null: true
       end
 
       connection.create_table :ratings, force: true, order: "id" do |t|
@@ -278,6 +414,27 @@ module ARCompat
         t.integer :book_id, limit: 8, null: true
       end
 
+      connection.create_table :taggings, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :tag_id, limit: 8, null: true
+        t.integer :super_tag_id, limit: 8, null: true
+        t.string :taggable_type, null: true
+        t.integer :taggable_id, limit: 8, null: true
+        t.string :comment, null: true
+        t.string :type, null: true
+      end
+
+      connection.create_table :tags, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :taggings_count, null: true, default: 0
+      end
+
+      connection.create_table :tires, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :car_id, limit: 8, null: true
+      end
+
       connection.create_table :topics, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :title, null: true
@@ -298,6 +455,14 @@ module ARCompat
         t.string :group, null: true
         t.datetime :created_at, precision: 6, null: true
         t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :toys, force: true, order: "toy_id" do |t|
+        t.integer :toy_id, limit: 8
+        t.string :name, null: true
+        t.integer :pet_id, limit: 8, null: true
+        t.datetime :created_at, precision: 6
+        t.datetime :updated_at, precision: 6
       end
 
       connection.create_table :toooooooooooooooooooooooooooooooooo_long_table_names, force: true,
@@ -325,8 +490,9 @@ module ARCompat
         next if model.name.nil? || model.name.include?("HABTM") # auto-generated join models
         next if model.primary_key || !model.table_exists?
 
-        if (composite = PRIMARY_KEYS[model.table_name])
-          model.primary_key = composite
+        if PRIMARY_KEYS.key?(model.table_name)
+          explicit = PRIMARY_KEYS.fetch(model.table_name)
+          model.primary_key = explicit if explicit
         elsif model.column_names.include?("id")
           model.primary_key = "id"
         end

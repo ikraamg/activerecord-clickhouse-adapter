@@ -27,6 +27,9 @@ end
 
 ActiveRecord::Base.establish_connection(ARCompat::CONNECTION_CONFIG)
 
+# Upstream test/support/global_config.rb runs the suites with this future default on.
+ActiveRecord.raise_on_missing_required_finder_order_columns = true
+
 # Quote "type" if it's a reserved word for the current connection (upstream helper.rb).
 QUOTED_TYPE = ActiveRecord::Base.lease_connection.quote_column_name("type")
 
