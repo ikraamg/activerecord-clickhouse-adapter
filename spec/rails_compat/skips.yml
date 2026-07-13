@@ -215,3 +215,30 @@ BasicsTest:
   test_respect_internal_encoding: >-
     column names arrive over the HTTP wire as UTF-8; Encoding.default_internal is not
     applied to schema strings
+
+HasOneAssociationsTest:
+  # Same families as the other association suites: query tallies assume transaction
+  # SQL the adapter never issues, and restoring state on failure needs rollback.
+  test_has_one_transaction: *query_count_tally
+  test_has_one_assignment_dont_trigger_save_on_change_of_same_object: *query_count_tally
+  test_has_one_with_touch_option_on_create: *query_count_tally
+  test_has_one_with_touch_option_on_touch: *query_count_tally
+  test_polymorphic_has_one_with_touch_option_on_create_wont_cache_association_so_fetching_after_transaction_commit_works: *query_count_tally
+  test_replacement_failure_due_to_new_record_should_raise_error: *collection_rollback
+  test_nullification_on_cpk_association: *composite_prefetch
+
+DeprecatedHasOneAssociationsTest:
+  test_reload_<association>: *raw_update_without_where
+  test_reset_<association>: *raw_update_without_where
+
+HasAndBelongsToManyAssociationsTest:
+  # The test issues raw `delete from countries_treaties`; ClickHouse's lightweight
+  # DELETE statement requires a WHERE clause (SYNTAX_ERROR).
+  test_should_property_quote_string_primary_keys: &raw_delete_without_where >-
+    raw DELETE without WHERE; ClickHouse lightweight DELETE requires a WHERE clause
+  test_proper_usage_of_primary_keys_and_join_table: *raw_delete_without_where
+
+  # ClickHouse resolves HAVING identifiers to SELECT aliases first, so a projected
+  # `SUM(salary) AS salary` makes HAVING's own SUM(salary) a nested aggregate.
+  test_find_scoped_grouped_having: >-
+    HAVING resolves the SELECT alias, nesting the aggregate (ILLEGAL_AGGREGATION)

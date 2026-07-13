@@ -20,6 +20,8 @@ if ENV["RAILS_SOURCE"] == "edge"
 end
 
 group :development, :test do
+  # models/user in the vendored association suites declares has_secure_password.
+  gem "bcrypt", require: false
   gem "benchmark-ips"
   # to_xml in the vendored relations_test serializes through Builder, as upstream does.
   gem "builder", require: false
