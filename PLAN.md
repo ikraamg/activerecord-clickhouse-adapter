@@ -70,6 +70,9 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | clickhouse-activerecord's `schema_migrations` state is not interoperable: it records versions in a ReplacingMergeTree with `active` flags, so a sink it migrated reports missing versions to this adapter — factory-reset before switching | Iteration 17 live |
 | `ssl: true` verifies certificates (Net::HTTP default); `ssl_verify: false` is the escape hatch for self-signed sinks — proven against the compose file's HTTPS listener (18443, self-signed cert in spec/support/tls) | Iteration 17 live |
 | Backtick-quoted identifiers accept `$`, unicode (`なまえ`) and reserved words (`from`) as column names — DDL, INSERT and SELECT all round-trip them | Iteration 18 probe |
+| HAVING resolves identifiers to SELECT aliases first: projecting `SUM(salary) AS salary` makes `HAVING SUM(salary)` a nested aggregate (ILLEGAL_AGGREGATION, code 184) | Iteration 19 live |
+| Lightweight `DELETE` requires a WHERE clause (bare `delete from t` is a SYNTAX_ERROR), same as `ALTER ... UPDATE` | Iteration 19 live |
+| `lag`/`lead` work directly as window functions on 25.8 (no `lagInFrame` + explicit frame dance); ROWS/RANGE/GROUPS frames all parse | Iteration 19 probe |
 | `find_each(cursor: [...])` (Rails 8.1) batches pk-less tables over explicit ORDER BY columns | Iteration 4 live |
 | Clause grammar: `FROM t [FINAL] [SAMPLE f] PREWHERE ... WHERE ... ORDER BY ... LIMIT n BY cols LIMIT m SETTINGS ...` — `LIMIT m` before `LIMIT n BY` is a syntax error | Iteration 5 live |
 | `FINAL` on a non-replacing MergeTree raises code 181; `SAMPLE` without `SAMPLE BY` in DDL raises code 141 | Iteration 5 probe |
@@ -447,6 +450,14 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     every built-in adapter. Writes are untouched — `quoted_date` still always encodes
     UTC (ledger #23), so the stored instant never shifts.
 
+43. **Window sugar rides Arel's own Window/Over nodes** *(Iteration 19)*: `.window`
+    appends one projected `fn(args) OVER (PARTITION BY … ORDER BY … [frame])` per call
+    via `select_values` — no custom nodes, no visitor changes, because `to_sql` already
+    renders `Arel::Nodes::Window`. The function name and alias must match an identifier
+    regex and the frame must start with ROWS/RANGE/GROUPS; those are the only free-form
+    strings (columns go through `arel_table`, so they quote themselves). ClickHouse 25.8
+    supports `lag`/`lead` directly — no `lagInFrame` fallback needed (probed live).
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -690,6 +701,19 @@ abstract classes that pin a table (LoosePerson). One adapter gap surfaced and fi
 TDD: local-timezone read representation (ledger #42). Harness: **1,805 runs,
 0 failures, 142 skips** (all manifest-documented or capability self-skips). Suite:
 429 examples green.
+
+**Phase 6 (cont.) — has_one + habtm corpora; window sugar.** *(landed — Iteration 19)*
+Vendored `has_one_associations_test` + `has_and_belongs_to_many_associations_test`
+byte-exact (+17 models incl. `publisher/*`, +8 fixture sets, +22 slice tables incl.
+string-keyed `countries`/`treaties` with the composite-keyed `countries_treaties`
+join table). No adapter gaps — every failure fell into an established family
+(query-count tallies, no-rollback, cpk prefetch, raw UPDATE/DELETE without WHERE,
+HAVING alias resolution). One new test-only dev dependency: bcrypt
+(`models/user` declares `has_secure_password`). Window-function relation sugar
+landed TDD as `RelationWindowing` (ledger #43): `.window(:fn, *cols, as:,
+partition_by:, order_by:, frame:)` on the `Querying` concern, 10 live examples
+covering row_number, running sums, lag, explicit frames and injection guards.
+Harness: **2,003 runs, 0 failures, 154 skips**. Suite: 441 examples green.
 
 ## 7. Spec strategy (three tiers)
 
