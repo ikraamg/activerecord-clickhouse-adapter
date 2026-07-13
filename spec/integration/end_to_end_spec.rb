@@ -139,6 +139,12 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(model.uniq_count(:device_id, if: { event_type: "render" })).to eq(2)
   end
 
+  it "projects a window expression alongside the row" do
+    positions = model.window(:row_number, as: :position, partition_by: :device_id, order_by: :ts)
+                     .order(:device_id, :ts).map { |row| row[:position] }
+    expect(positions).to eq([1, 2, 1])
+  end
+
   describe "the pre-aggregation pipeline (MV -> AggregatingMergeTree -> merged reads)" do
     subject(:daily_model) do
       Class.new(ActiveRecord::Base) do

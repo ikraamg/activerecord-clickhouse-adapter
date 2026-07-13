@@ -150,6 +150,60 @@ module ActiveRecord
         end
       end
 
+      # Projects one window expression per call, e.g.
+      # window(:sum, :battery, as: :drained, partition_by: :device_id, order_by: :observed_at).
+      # Arel's own Window/Over nodes do the rendering; the function name, alias and
+      # frame are the only free-form strings, so they are validated here.
+      module RelationWindowing
+        WINDOW_IDENTIFIER = /\A[A-Za-z_]\w*\z/
+        WINDOW_FRAME = /\A(?:ROWS|RANGE|GROUPS)\b[\w\s]+\z/i
+
+        def window(function, *columns, as:, partition_by: nil, order_by: nil, frame: nil)
+          spawn.window!(function, *columns, as: as, partition_by: partition_by, order_by: order_by, frame: frame)
+        end
+
+        def window!(function, *columns, as:, partition_by: nil, order_by: nil, frame: nil)
+          projection = window_projection(function, columns, window_definition(partition_by, order_by, frame))
+          self.select_values += [klass.arel_table[::Arel.star]] if select_values.empty?
+          self.select_values += [::Arel::Nodes::As.new(projection, ::Arel.sql(window_identifier(as, "alias")))]
+          self
+        end
+
+        private
+
+        def window_projection(function, columns, definition)
+          arguments = columns.map { |column| klass.arel_table[column] }
+          ::Arel::Nodes::NamedFunction.new(window_identifier(function, "function"), arguments).over(definition)
+        end
+
+        def window_identifier(value, role)
+          raise ArgumentError, "window #{role} must be an identifier" unless WINDOW_IDENTIFIER.match?(value.to_s)
+
+          value.to_s
+        end
+
+        def window_definition(partition_by, order_by, frame)
+          raise ArgumentError, "window frame must start with ROWS, RANGE or GROUPS" if
+            frame && !WINDOW_FRAME.match?(frame)
+
+          definition = ::Arel::Nodes::Window.new
+          Array(partition_by).each { |column| definition.partition(klass.arel_table[column]) }
+          window_orderings(order_by).each { |ordering| definition.order(ordering) }
+          definition.frame(::Arel.sql(frame)) if frame
+          definition
+        end
+
+        def window_orderings(order_by)
+          return order_by.map { |column, direction| window_ordering(column, direction) } if order_by.is_a?(Hash)
+
+          Array(order_by).map { |column| window_ordering(column, :asc) }
+        end
+
+        def window_ordering(column, direction)
+          direction.to_s == "desc" ? klass.arel_table[column].desc : klass.arel_table[column].asc
+        end
+      end
+
       # Compiles the dialect state RelationMethods accumulated into the Arel AST right
       # before SQL generation; only RelationMethods#build_arel calls in here.
       module RelationDialectCompilation
@@ -311,13 +365,14 @@ module ActiveRecord
 
         included do
           default_scope do
-            extending(RelationMethods, RelationDialectCompilation, RelationWrites, RelationCalculations)
+            extending(RelationMethods, RelationWindowing, RelationDialectCompilation,
+                      RelationWrites, RelationCalculations)
           end
         end
 
         class_methods do
           delegate :final, :sample, :prewhere, :settings, :limit_by, :array_join,
-                   :group_by_period, :fill, :rollup, :uniq_count, :quantile,
+                   :group_by_period, :fill, :rollup, :window, :uniq_count, :quantile,
                    :top_k, :arg_max, :arg_min, :estimated_count, to: :all
 
           # insert_all's streaming sibling: the batch goes over the wire as one

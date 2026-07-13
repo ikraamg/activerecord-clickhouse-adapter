@@ -137,6 +137,15 @@ Event.group_by_period(:day, :ts).fill.count        # gap-filled with WITH FILL
 Event.group(:device_id).rollup.count               # totals row, keyed nil
 ```
 
+Window functions project alongside the row:
+
+```ruby
+Event.window(:row_number, as: :position, partition_by: :device_id, order_by: :ts)
+Event.window(:sum, :duration_ms, as: :running_total, order_by: :ts)
+Event.window(:lag, :battery, as: :previous, partition_by: :device_id, order_by: :ts,
+             frame: "ROWS BETWEEN 1 PRECEDING AND CURRENT ROW")
+```
+
 Approximate and positional aggregates:
 
 ```ruby
