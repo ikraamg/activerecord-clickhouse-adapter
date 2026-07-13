@@ -17,8 +17,9 @@ monkeypatches into Active Record or Arel internals.
   pipeline, per-adapter Arel visitors, `NATIVE_DATABASE_TYPES`, `DatabaseTasks.register_task`.
   The prior-art gem reopens Rails internals; we will not.
 - **Performance is a feature.** Server-side bind parameters, persistent HTTP with
-  compression, a pluggable wire-format codec (JSON first for correctness, `RowBinary` for
-  speed), streaming reads, and a benchmark suite with committed baseline numbers.
+  compression, a pluggable wire-format codec (`RowBinary` by default, JSON as the
+  correctness fallback), streamed bulk inserts, and a benchmark suite with committed
+  baseline numbers.
 - **Instrumentation is first-class.** ClickHouse tells us `read_rows`, `read_bytes`,
   `elapsed_ns` on every response (`X-ClickHouse-Summary`); the adapter surfaces that through
   `ActiveSupport::Notifications` and `Relation#explain` maps to real `EXPLAIN` variants.
@@ -108,6 +109,11 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | A column named like its own table breaks every qualified star: `SELECT t.* FROM t` resolves `t.*` to the column, raising UNSUPPORTED_METHOD (code 1) | Iteration 15 probe |
 | A FROM alias equal to a real table name shadows that table in later JOINs — `FROM posts AS categories_posts JOIN categories_posts` joins the aliased posts again (UNKNOWN_IDENTIFIER, code 47) | Iteration 15 probe |
 | Rails opens a SavepointTransaction for `transaction(requires_new: true)` nested in a dirty transaction regardless of `supports_savepoints?` — clean parents get RestartParentTransaction instead, so only dirty nesting reaches `create_savepoint` | Iteration 15 live |
+| Mutations with ORDER/LIMIT arrive as `WHERE pk IN (SELECT ...)` (Rails' Arel rewrite), so the pre-mutation count must run the same subquery; stripping qualifiers inside that subquery makes JOIN ONs ambiguous (AMBIGUOUS_COLUMN_NAME, code 352) | Iteration 16 live |
+| RowBinary encodes everything little-endian: varint-prefixed Strings, UUID as two LE UInt64 halves (high, low), Date UInt16 / Date32 Int32 epoch days, DateTime UInt32 epoch seconds, DateTime64 Int64 ticks, Decimal as scaled Int32/64/128/256 by precision (header normalizes aliases to `Decimal(P, S)`), Nullable as a flag byte that omits the payload when null, Map as varint count + interleaved pairs | Iteration 16 probe |
+| RowBinary serializes LowCardinality columns as their plain inner type — the dictionary encoding is block-format-only | Iteration 16 probe |
+| `output_format_binary_write_json_as_string=1` delivers JSON columns as their text form on binary wires; without it they use a binary layout with no stability guarantee | Iteration 16 probe |
+| The HTTP interface accepts chunked `Transfer-Encoding` INSERT bodies with the statement in the `query` param: 100k `JSONCompactEachRow` rows streamed in one request, `written_rows` in the summary header | Iteration 16 probe |
 
 Local corpora:
 
@@ -204,12 +210,12 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
    identifiers — naive gsub corrupted `concat('what?', ?)`); integer param types are sized
    by magnitude up to Int256/UInt256 (a too-small type made the server wrap `2**70` → 0),
    beyond which we raise rather than wrap.
-2. **Read path formats.** v1 `JSONCompactEachRowWithNamesAndTypes` (self-describing, exact
-   big-int handling confirmed), sent with `output_format_json_quote_decimals=1` +
-   `output_format_json_quote_denormals=1` so Decimals stay exact and `NaN`/`±Inf` survive
-   (both verified live; defaults silently corrupt). v2 `RowBinaryWithNamesAndTypes` behind
-   the same codec interface, adopted only if benchmarks prove it (ecto_ch's experience says
-   it will for numeric/DateTime-heavy result sets).
+2. **Read path formats.** Default wire is `RowBinaryWithNamesAndTypes` (adopted
+   Iteration 16 after benchmarks proved it — ledger #37); the JSON wire
+   (`JSONCompactEachRowWithNamesAndTypes`, sent with
+   `output_format_json_quote_decimals=1` + `output_format_json_quote_denormals=1` so
+   Decimals stay exact and `NaN`/`±Inf` survive) remains as the per-query fallback for
+   types without a binary decoder and as the `select_format: :json` escape hatch.
 3. **Type parsing is an AST parser, not regexes.** `LowCardinality(Nullable(String))`,
    `Map(String, Array(Tuple(UInt8, Decimal(38, 10))))`, `DateTime64(3, 'UTC')`,
    `Enum8('a' = 1)` all parse into type nodes that build the caster chain. The prior art's
@@ -380,6 +386,30 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     `column_name_matcher`/`column_name_with_order_matcher` mirror MySQL's, because
     `disallow_raw_sql!` vets `order`/`pluck` arguments against them and the abstract
     versions reject this adapter's own `quote_column_name` output.
+
+36. **Mutation counts follow Rails' ORDER/LIMIT rewrite** *(Iteration 16)*: the
+    pre-mutation `SELECT count()` (decision #24) rebuilds the same
+    `WHERE pk IN (SELECT ... LIMIT n)` shape Rails compiles ordered/limited
+    mutations into — a capped count via subquery — instead of returning 0; and the
+    Arel visitor stops de-qualifying column names once it descends into a nested
+    SELECT, because those subqueries carry JOINs whose ON clauses need qualifiers.
+
+37. **RowBinary is the default read wire, JSON the per-query fallback** *(Iteration 16)*:
+    `RowBinaryWithNamesAndTypes` decodes straight to final Ruby values (2x faster,
+    2.5x fewer allocations on the 10k-row baseline — BASELINE.md), and both wires
+    still flow through the same `Types` casters, which are idempotent on decoded
+    values. A type without a binary decoder (AggregateFunction states, exotics)
+    raises `RowBinary::Undecodable` and the connection re-runs that query on the
+    JSON wire — SELECTs are safe to retry, and mutations return no columns so they
+    never trigger it. `select_format: :json` in the config forces JSON everywhere.
+
+38. **insert_stream is the materialization-free bulk path** *(Iteration 16)*:
+    `connection.insert_stream(table, rows)` (and the model-level sugar on the
+    Querying concern) streams any Enumerable of hashes as one chunked
+    `JSONCompactEachRow` POST — no SQL string rendering, one HTTP chunk of the
+    batch in memory at a time, 4.8x faster than `insert_all!` on the 1k-row
+    baseline. Times/dates/decimals encode via `quoted_date`/`to_s("F")`; the
+    server casts everything else from JSON.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -566,6 +596,28 @@ server limitation (no unique constraints / no rollback / functional-dependency
 GROUP BY / alias shadowing / table-named column vs qualified star / cpk prefetch).
 Suite: 363 examples green; harness 1,128 runs, 0 failures, 101 skips.
 
+**Phase 6 (cont.) — associations corpus.** *(landed — Iteration 16, Track A)*
+Vendored `belongs_to_associations_test` + `has_many_associations_test` byte-exact
+(+29 models incl. `sharded/*`, `cpk/*`, `admin/user`; +13 fixture sets; +31 slice
+tables). Two adapter gaps surfaced and fixed TDD: ordered/limited mutations now
+count via the same `WHERE pk IN (subquery)` rewrite Rails compiles them into
+(ledger #36), and the Arel visitor keeps column qualifiers inside nested SELECTs
+so joined deletes stop tripping AMBIGUOUS_COLUMN_NAME. Helper shim grew
+`WaitForAsyncTestHelper`, the global-thread-pool async executor, `reset_callbacks`,
+and YAML-alias loading for skips.yml. Harness: **1,619 runs, 0 failures, 138 skips**
+(64 manifest, 74 capability self-skips). Suite: 369 examples green.
+
+**Phase 7 (cont.) — RowBinary read wire + insert_stream.** *(landed — Iteration 16, Track B)*
+`RowBinary` decoder (one flat lambda table per type family off the TypeParser AST)
+behind `HTTPConnection`: binary wire by default, per-query JSON fallback on
+`Undecodable`, `select_format: :json` escape hatch (ledger #37). All families the
+JSON wire handled decode to identical Ruby values (38-example matrix, incl.
+Int128/256, Decimal256, DateTime64 tz, Enum labels, named Tuples, invalid-UTF-8
+bytes). `insert_stream` streams Enumerables as chunked `JSONCompactEachRow` POSTs
+(ledger #38). Baseline: 10k-row select 13.2 → 23.5 i/s and 26.6 → 10.6 MB;
+1k-row ingest 26.6 ms (`insert_all!`) → 5.6 ms; 100k lazy rows in one 336 ms
+request. Suite: 415 examples green; harness unchanged.
+
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
 round-robin with health-aware failover, TLS verification ON by default, read-only user
@@ -611,9 +663,10 @@ prod-like docker sandbox e2e. README (ankane style), CHANGELOG, CI matrix
   skips now pass. Residual cost: one `system.tables` SCHEMA query per `create!`
   (Rails does not cache `prefetch_primary_key?` per model) — candidate for caching if
   insert-path profiling ever flags it.
-- **RowBinary in pure Ruby** may not beat Oj/JSON parsing for string-heavy sets — that's why
-  the codec is pluggable and benchmark-gated; a native extension is explicitly out of scope
-  until pure Ruby is proven insufficient.
+- **RowBinary in pure Ruby** beat JSON parsing across every benchmarked shape
+  (Iteration 16: 1.8–2x on selects, string-heavy included), so it shipped as the default;
+  a native extension stays out of scope. The residual risk is new server types without a
+  binary decoder — those fall back to the JSON wire per query, so they degrade, not break.
 - **`UPDATE` semantics drift** across CH versions (lightweight update GA is moving) —
   capability detection by server version + probe, matrix-tested against LTS and latest.
 - **AR internals churn** on `main` — the QueryIntent pipeline rewrite (above) is already

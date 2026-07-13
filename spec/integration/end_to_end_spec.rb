@@ -103,6 +103,12 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(model.where(device_id: 5).count).to eq(2)
   end
 
+  it "streams a lazy batch through one chunked insert" do
+    rows = (1..500).lazy.map { |n| { device_id: 100 + n, event_type: "stream" } }
+    model.insert_stream(rows)
+    expect(model.where(event_type: "stream").count).to eq(500)
+  end
+
   it "updates matching rows with a mutation" do
     model.where(event_type: "render").update_all(duration_ms: 0)
     expect(model.where(event_type: "render").distinct.pluck(:duration_ms)).to eq([0])

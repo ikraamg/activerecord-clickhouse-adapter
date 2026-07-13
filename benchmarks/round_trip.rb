@@ -54,6 +54,11 @@ Benchmark.ips do |bench|
   bench.report("pluck 100k Int64") { model.limit(100_000).pluck(:device_id) }
   bench.report("aggregate 100k rows server-side") { model.sum(:amount) }
   bench.report("insert_all! 1k rows") { model.insert_all!(insert_batch) }
+  bench.report("insert_stream 1k rows") { connection.insert_stream("bench_events", insert_batch) }
+  bench.report("insert_stream 100k rows (lazy)") do
+    rows = (1..100_000).lazy.map { |n| { device_id: n, ts: Time.now.utc, event_type: "stream", ratio: n / 7.0 } }
+    connection.insert_stream("bench_events", rows)
+  end
 end
 
 report = MemoryProfiler.report { connection.select_all("SELECT * FROM bench_events LIMIT 10000") }
