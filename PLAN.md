@@ -83,6 +83,10 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | A boolean column default (`DEFAULT true`) arrives in `system.columns.default_expression` as the bare token `true`; classifying it as a default_function made `Column#auto_populated?` true and broke the pk write-back (Rails asked RETURNING for it) | Iteration 9 live |
 | VALUES-section coercion: a `now64(6)` expression (internally Decimal64) raises TYPE_MISMATCH (code 53) against Date32 columns, and even `toString(now64(6))` will not parse into Date32; only plain `now()` (DateTime) coerces into both Date32 and DateTime64 targets | Iteration 9 probe |
 | Sorting keys reject Nullable columns by default (`allow_nullable_key` off, ILLEGAL_COLUMN code 44) — schema-slice tables keyed on foreign keys must keep those columns non-nullable | Iteration 9 live |
+| `Nullable(Nothing)` is the one query-param type that carries NULL (sent as `\N`) and still compares against any column type; a nil bind typed e.g. `Nullable(String)` with an empty value silently becomes `''`, not NULL | Iteration 10 probe |
+| A column named like its own table breaks the qualified matcher: `SELECT comments.* FROM comments WHERE ...` resolves `comments` to the column and raises UNSUPPORTED_METHOD (code 1) — only when a WHERE/ORDER clause is present | Iteration 10 probe |
+| DateTime64 query params reject timezone offsets ("isn't parsed completely", code 457): values must be naive wall-clock strings, so `default_timezone = :local` cannot round-trip | Iteration 10 probe |
+| `RENAME TABLE a TO b` is plain ClickHouse DDL and preserves rows — backs `rename_table` | Iteration 10 live |
 
 Local corpora:
 
@@ -268,6 +272,16 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     date (`*_on`) and datetime (`*_at`) attributes with this single expression in
     `insert_all`, and only a plain DateTime coerces into both Date32 and DateTime64
     VALUES targets — so bulk-insert timestamps carry second precision.
+21. **Sorting-key lookup is cached per connection** *(Iteration 10, approved by Ikraam)*:
+    Rails calls `prefetch_primary_key?` on every create, which cost one `system.tables`
+    join per INSERT. `generatable_primary_key` memoizes per table (nil results included)
+    and the migration-API DDL methods (`create_table`/`drop_table`/`rename_table`) clear
+    the whole cache. DDL issued through raw `execute` bypasses invalidation — accepted:
+    schema changes outside the migration API already require `reset_column_information`.
+22. **nil binds are `Nullable(Nothing)`** *(Iteration 10)*: the one param type that both
+    carries NULL (`\N`) and compares against any column type. Typing nil binds by their
+    AR column type corrupts silently — an empty `Nullable(String)` param is `''`, not
+    NULL — and non-Nullable param types reject the value outright.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -382,6 +396,19 @@ upsert/conflict tests self-skip exactly as upstream intends;
 `high_precision_current_timestamp` now stamps `record_timestamps` bulk inserts. Harness:
 **362 runs, 0 failures, 83 skips** (9 manifest — 5 GROUP BY, 1 self-join, 3 no-unique-
 constraint semantics; 74 capability self-skips). Suite: 227 examples green.
+
+**Phase 6 (cont.) — nil binds, sorting-key cache + finder_test corpus.** *(landed — Iteration 10)*
+Two adapter fixes fell out of the corpus: nil binds now travel as `Nullable(Nothing)`/`\N`
+(they were silently becoming `''` for strings and erroring for integers), and
+`rename_table` landed on plain `RENAME TABLE`. `generatable_primary_key` is cached
+per connection (Rails checks `prefetch_primary_key?` on every create) and invalidated by
+create/drop/rename_table. `finder_test` vendored byte-exact (+12 models, +9 fixture sets,
++18 slice tables); upstream's `raise_on_missing_required_finder_order_columns = true`
+now set in the helper shim (mirrors test/support/global_config.rb); `PRIMARY_KEYS` slice
+map supports explicit nil for id-column tables that must stay pk-less. The upstream
+`comments.comments` column stays out of the slice (qualified-matcher quirk, §2). Harness:
+**636 runs, 0 failures, 87 skips** (13 manifest — 6 GROUP BY, 2 self-join, 3 no-unique-
+constraint, 2 default_timezone :local; 74 capability self-skips). Suite: 238 examples green.
 
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
