@@ -99,6 +99,11 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | `async_insert`/`wait_for_async_insert` work as HTTP query params per request; `wait_for_async_insert=1` blocks the ack until the buffer flushes, so the row is immediately readable | Iteration 12 probe |
 | Rails' stock batching shape (`WHERE pk > last ORDER BY pk LIMIT n`) prunes via PrimaryKey binary search per EXPLAIN — no custom find_each needed when pk = sorting key | Iteration 12 probe |
 | `INSERT INTO t (cols) SETTINGS k = v VALUES ...` is valid — SETTINGS sits between the column list and VALUES | Iteration 12 probe |
+| AggregateFunction state argument types are invariant: merging a state built from one type into another raises CANNOT_CONVERT_TYPE (code 70); states arrive as opaque binary strings on the JSON wire, SimpleAggregateFunction reads cast to the inner type | Iteration 13 probe |
+| Parametric combinators keep parameters inside the type label — `AggregateFunction(quantile(0.95), Int64)` — so the type parser must treat the function name as balanced-paren text, not a bare identifier | Iteration 13 live |
+| `system.columns.default_kind` distinguishes DEFAULT / MATERIALIZED / ALIAS with the expression in `default_expression`; `compression_codec` carries `CODEC(...)` verbatim | Iteration 14 probe |
+| `system.tables.primary_key` equals `sorting_key` unless a narrower PRIMARY KEY clause was declared — the inequality is the only dump-worthy signal | Iteration 14 probe |
+| `ALTER TABLE ... {DETACH\|ATTACH\|DROP\|FREEZE} PARTITION ID '<id>'` takes a plain quoted literal — the ID form never evaluates expressions, unlike `PARTITION <expr>` | Iteration 14 probe |
 
 Local corpora:
 
@@ -329,6 +334,31 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     every statement on that connection; `wait_for_async_insert` stays 1 unless explicitly
     set to 0, because a fire-and-forget ack can lose rows on a server crash.
 
+29. **Aggregate calculations carry merge: and if:, not new method names** *(Iteration 13)*:
+    `-Merge` (finishing AggregateFunction state columns) and `-If` (conditional
+    aggregation in one scan) are options on the existing `uniq_count`/`quantile`/
+    `top_k`/`arg_max`/`arg_min`, keeping one surface instead of a combinator matrix.
+    `merge: true` with `if:` is refused loudly (no `-MergeIf` combinator exists).
+    Grouped relations return Rails-shaped hashes (scalar key for one group column,
+    array for several) so merged reads compose with `group`/`group_by_period`.
+
+30. **Relation settings apply to writes as per-request HTTP parameters** *(Iteration 14)*:
+    SELECTs carry `.settings` in-SQL, but ALTER/INSERT grammars each place SETTINGS
+    differently, so `insert_all`/`update_all`/`delete_all` scope the same relation
+    state through `with_request_settings` (connection-level, restored after the block).
+    Setting names are validated before they reach the wire.
+
+31. **ClickHouse column/table storage clauses are first-class DSL options** *(Iteration 14)*:
+    `codec:`, `materialized:`, `alias:` on columns (mutually exclusive with `default:`,
+    enforced client-side) and `primary_key:`/`sample:` on tables — all introspected from
+    `system.columns`/`system.tables` and dumped round-trip. Under `id: false` the Rails
+    `primary_key:` kwarg is inert, so the DSL reuses it for the PRIMARY KEY clause.
+
+32. **Partition verbs use the PARTITION ID literal form only** *(Iteration 14)*:
+    `partitions`/`detach_partition`/`attach_partition`/`drop_partition`/
+    `freeze_partition` quote the partition id as a plain literal, so arbitrary
+    expressions never reach the ALTER — the OLAP replacement for bulk deletes/archival.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -486,6 +516,23 @@ Float/Integer coercion as the injection guard), and `estimated_count` (O(1) from
 proven optimal by EXPLAIN and locked in by spec, no custom batching. Deferred:
 -State/-Merge aggregate combinators (until a real consumer asks), projections in
 schema.rb (structure.sql carries them). Suite: 300 examples green; harness unchanged.
+
+**Phase 7 (cont.) — aggregate-state pipeline.** *(landed — Iteration 13)*
+The deferral above lasted one iteration: the reference-corpus survey (ecto_ch,
+clickhouse-sqlalchemy, infi) showed `-State`/`-Merge` is the pattern every good
+ClickHouse ORM converges on. `merge:` and `if:` options on the existing aggregate
+methods (ledger #29), grouped merged reads returning Rails-shaped hashes, the type
+parser handling parametric labels like `quantile(0.95)` inside AggregateFunction
+columns, and an e2e spine chapter proving events → MV → AggregatingMergeTree →
+merged read. State argument types are invariant (code 70, §2).
+
+**Phase 7 (cont.) — dialect fidelity sweep.** *(landed — Iteration 14)*
+`array_join` (+ `left:`/`as:`) as a relation verb with ASOF JOIN covered through raw
+string joins; relation `.settings` extended to writes via per-request HTTP parameters
+(ledger #30); `codec:`/`materialized:`/`alias:` column options and
+`primary_key:`/`sample:` table clauses, all introspected and schema-dumped round-trip
+(ledger #31); partition lifecycle verbs on the PARTITION ID literal form (ledger #32).
+Suite: 353 examples green; harness unchanged (801 runs, 0 failures, 91 skips).
 
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica

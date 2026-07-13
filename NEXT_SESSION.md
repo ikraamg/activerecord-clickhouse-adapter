@@ -1,14 +1,13 @@
-# Iteration 13: relations_test corpus (query-composition semantics at scale)
+# Iteration 15: relations_test corpus (query-composition semantics at scale)
 
-> Status at handoff: 300 rspec examples green (plus the rails-compat harness: 801
+> Status at handoff: 353 rspec examples green (plus the rails-compat harness: 801
 > upstream minitest runs, 0 failures, 91 skips — 17 manifest, 74 capability self-skips),
-> rubocop clean. Iteration 12 landed the OLAP-native surface in three tiers (PLAN.md §6
-> Phase 7, ledger #26–#28): relation sugar (`group_by_period`, `.fill(step:)`, `.rollup`,
-> `uniq_count`/`quantile`/`top_k`/`arg_max`/`arg_min`, `estimated_count`), pre-aggregation
-> DDL (`create_materialized_view` with mandatory TO target + byte-identical dumper
-> round-trip, `add/drop/materialize_projection`, `optimize_table`), and ingestion
-> ergonomics (`async_insert` connection config, durable by default; stock `find_each`
-> proven sorting-key-optimal by EXPLAIN and locked in by spec).
+> rubocop clean. Iteration 13 landed the aggregate-state pipeline (ledger #29): `merge:`
+> and `if:` on all aggregate methods, grouped merged reads, parametric type labels in
+> the parser, e2e spine chapter for events → MV → AggregatingMergeTree → merged read.
+> Iteration 14 landed the dialect fidelity sweep (ledger #30–#32): `array_join`,
+> per-write relation settings, `codec:`/`materialized:`/`alias:` columns,
+> `primary_key:`/`sample:` table clauses, and partition lifecycle verbs.
 
 ## Scope
 
@@ -38,8 +37,11 @@
   table's own columns raise UNKNOWN_IDENTIFIER (code 47).
 - `.rollup` totals are keyed `nil` except for LowCardinality group columns, which keep
   their type default (`''`) — group_by_use_nulls doesn't null them (ledger #26).
-- OLAP deferrals from Iteration 12: -State/-Merge aggregate combinators (wait for a real
-  consumer), projections in schema.rb (structure.sql carries them today).
+- `merge:` and `if:` cannot combine (no -MergeIf); state argument types are invariant
+  (code 70) — a wrong-typed merge is a server error, not a silent zero.
+- Remaining OLAP deferrals: RowBinary + `insert_stream` (dedicated performance
+  iteration; PLAN §6 Phase 8 note), window functions, dictionaries/dictGet,
+  ON CLUSTER DDL, projections in schema.rb (structure.sql carries them today).
 - Fixture YAMLs with ERB (`<%= %>`) evaluate in the harness — keep the vendored files
   byte-exact and let them run.
 
@@ -47,4 +49,4 @@
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries (and shrank where workarounds landed),
-this file rewritten for Iteration 14.
+this file rewritten for Iteration 16.
