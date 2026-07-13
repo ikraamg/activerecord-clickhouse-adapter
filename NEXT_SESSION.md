@@ -1,52 +1,50 @@
-# Iteration 15: relations_test corpus (query-composition semantics at scale)
+# Iteration 16: associations corpus or RowBinary performance pass (pick at session start)
 
-> Status at handoff: 353 rspec examples green (plus the rails-compat harness: 801
-> upstream minitest runs, 0 failures, 91 skips — 17 manifest, 74 capability self-skips),
-> rubocop clean. Iteration 13 landed the aggregate-state pipeline (ledger #29): `merge:`
-> and `if:` on all aggregate methods, grouped merged reads, parametric type labels in
-> the parser, e2e spine chapter for events → MV → AggregatingMergeTree → merged read.
-> Iteration 14 landed the dialect fidelity sweep (ledger #30–#32): `array_join`,
-> per-write relation settings, `codec:`/`materialized:`/`alias:` columns,
-> `primary_key:`/`sample:` table clauses, and partition lifecycle verbs.
+> Status at handoff: 363 rspec examples green (plus the rails-compat harness: 1,128
+> upstream minitest runs, 0 failures, 101 skips — 27 manifest, 74 capability
+> self-skips), rubocop clean. Iteration 15 vendored `relations_test` (327 new runs)
+> and fixed three adapter gaps it exposed: savepoint verbs are honest no-ops
+> (ledger #33), multi-join qualified-star column names are stripped back to bare
+> names when unambiguous (ledger #34), and the identifier matchers admit
+> backtick-quoted names like MySQL's (ledger #35).
 
-## Scope
+## Scope (two candidate tracks — confirm with Ikraam if both feel ripe)
 
-1. **Vendor `relations_test`** (v8.1.3, byte-exact) — the biggest remaining read-path
-   corpus: merge/or/not, unscope, rewhere, structurally-compatible relations. Walk the
-   transitive `require`s one at a time as before. Expect manifest skips clustered on
-   the known server semantics (GROUP BY functional dependency, self-join ambiguity).
-2. **Schema slice growth rules stay decisions #14/#15** plus the Iteration 10/11
-   additions: synthesized `order: "id"` Int64 ids, columns `null: true` unless in the
-   sorting key, FK columns `limit: 8`, never a column named like its own table,
-   `PRIMARY_KEYS` nil-entries for models that must stay pk-less.
-3. **Grow the e2e spine** with whatever lands (relation merge/or round trip).
-4. If touching the read/write path, re-run `bundle exec ruby benchmarks/round_trip.rb`
-   and append to `benchmarks/BASELINE.md` history.
+**Track A — associations corpus.** `has_many_associations_test` /
+`belongs_to_associations_test` are the biggest remaining untested read-path surface
+(preloading, counter caches, dependent options). relations_test already pulled in
+most of their models (reader, wheel, engine, bird, dats/*), so the marginal slice
+cost is low. Expect skips on counter-cache tests (they mutate via UPDATE ... = x + 1
+on sorting-key-adjacent columns) and touch: true chains.
 
-## Watch out for
+**Track B — RowBinary + insert_stream performance iteration** (PLAN §6 Phase 8 note,
+deferred twice): v2 read codec behind the existing codec interface, adopted only if
+`benchmarks/round_trip.rb` proves it; `insert_stream` for bulk ingestion. This is the
+last big performance lever before Phase 8 hardening.
 
+## Watch out for (carried forward + new)
+
+- The slice cannot carry a column named like its own table — it breaks every
+  qualified star server-side (UNSUPPORTED_METHOD, §2). comments.comments stays out.
+- A FROM alias equal to a real table name shadows that table in later JOINs
+  (UNKNOWN_IDENTIFIER, §2) — alias-tracker style tests get manifest skips.
+- create_or_find_by's conflict recovery can never fire (no unique constraints);
+  its rollback tests need real transactions. Both reasons are already in skips.yml —
+  reuse the wording for new suites.
+- Rails' prefetch seam cannot populate one column of a composite primary key —
+  cpk models whose slice table has a single-column sorting key hit
+  `next_sequence_value(nil)`; skip, don't special-case.
 - The mutation affected-row count is a pre-mutation `SELECT count()` (decision #24):
-  raw-SQL mutations and LIMIT/ORDER statements return 0. Don't "fix" upstream tests
-  that assert counts on those paths — check what the statement actually was first.
-- `return_value_after_insert?` is false for every column (decision #25). Upstream
-  tests asserting DB-computed defaults appear on the record without reload need
-  manifest skips (no RETURNING), not adapter changes.
-- Sorting-key columns are immutable (CANNOT_UPDATE_COLUMN, code 420) — updating a
-  record's id can never work; skip with that reason.
-- ClickHouse has no correlated subqueries: mutation SET values referencing the target
-  table's own columns raise UNKNOWN_IDENTIFIER (code 47).
-- `.rollup` totals are keyed `nil` except for LowCardinality group columns, which keep
-  their type default (`''`) — group_by_use_nulls doesn't null them (ledger #26).
-- `merge:` and `if:` cannot combine (no -MergeIf); state argument types are invariant
-  (code 70) — a wrong-typed merge is a server error, not a silent zero.
-- Remaining OLAP deferrals: RowBinary + `insert_stream` (dedicated performance
-  iteration; PLAN §6 Phase 8 note), window functions, dictionaries/dictGet,
-  ON CLUSTER DDL, projections in schema.rb (structure.sql carries them today).
-- Fixture YAMLs with ERB (`<%= %>`) evaluate in the harness — keep the vendored files
-  byte-exact and let them run.
+  raw-SQL mutations and LIMIT/ORDER statements return 0.
+- `return_value_after_insert?` is false for every column (decision #25) — no
+  RETURNING; DB-computed defaults need a reload.
+- Sorting-key columns are immutable (CANNOT_UPDATE_COLUMN, code 420).
+- No correlated subqueries in mutation SETs (UNKNOWN_IDENTIFIER, code 47).
+- Remaining OLAP deferrals: window functions, dictionaries/dictGet, ON CLUSTER DDL,
+  projections in schema.rb (structure.sql carries them today).
 
 ## Definition of done
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
-skips.yml only grew by honestly-reasoned entries (and shrank where workarounds landed),
-this file rewritten for Iteration 16.
+skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the read/write
+path was touched, this file rewritten for Iteration 17.

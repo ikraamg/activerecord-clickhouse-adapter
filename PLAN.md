@@ -104,6 +104,10 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | `system.columns.default_kind` distinguishes DEFAULT / MATERIALIZED / ALIAS with the expression in `default_expression`; `compression_codec` carries `CODEC(...)` verbatim | Iteration 14 probe |
 | `system.tables.primary_key` equals `sorting_key` unless a narrower PRIMARY KEY clause was declared — the inequality is the only dump-worthy signal | Iteration 14 probe |
 | `ALTER TABLE ... {DETACH\|ATTACH\|DROP\|FREEZE} PARTITION ID '<id>'` takes a plain quoted literal — the ID form never evaluates expressions, unlike `PARTITION <expr>` | Iteration 14 probe |
+| With 2+ JOINs the analyzer renames a qualified star's colliding columns to `table.column` on the wire (first duplicate stays bare, later ones qualify); no setting restores bare names — `multiple_joins_try_to_keep_original_names` is old-analyzer only | Iteration 15 probe |
+| A column named like its own table breaks every qualified star: `SELECT t.* FROM t` resolves `t.*` to the column, raising UNSUPPORTED_METHOD (code 1) | Iteration 15 probe |
+| A FROM alias equal to a real table name shadows that table in later JOINs — `FROM posts AS categories_posts JOIN categories_posts` joins the aliased posts again (UNKNOWN_IDENTIFIER, code 47) | Iteration 15 probe |
+| Rails opens a SavepointTransaction for `transaction(requires_new: true)` nested in a dirty transaction regardless of `supports_savepoints?` — clean parents get RestartParentTransaction instead, so only dirty nesting reaches `create_savepoint` | Iteration 15 live |
 
 Local corpora:
 
@@ -359,6 +363,24 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     `freeze_partition` quote the partition id as a plain literal, so arbitrary
     expressions never reach the ALTER — the OLAP replacement for bulk deletes/archival.
 
+33. **Savepoint verbs are honest no-ops, like the transaction verbs** *(Iteration 15)*:
+    Rails opens savepoints for `requires_new: true` nested inside a dirty transaction
+    regardless of `supports_savepoints?` (§2), so `create_savepoint`/
+    `exec_rollback_to_savepoint`/`release_savepoint` are empty bodies — the alternative
+    is a server syntax error inside every `create_or_find_by` retry. Nothing pretends
+    to roll back: nested `ActiveRecord::Rollback` leaves the write in place (specced).
+
+34. **Result columns strip the analyzer's join qualifiers when unambiguous**
+    *(Iteration 15)*: multi-join qualified stars come back as `table.column` (§2), which
+    would break Rails' by-name attribute mapping (`MissingAttributeError` on every
+    multi-join `t.*` read). `cast_result` strips the qualifier wherever the bare name
+    stays unique in the result; genuine duplicates keep the server's qualified names.
+
+35. **Identifier matchers admit backtick-quoted names** *(Iteration 15)*:
+    `column_name_matcher`/`column_name_with_order_matcher` mirror MySQL's, because
+    `disallow_raw_sql!` vets `order`/`pluck` arguments against them and the abstract
+    versions reject this adapter's own `quote_column_name` output.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -533,6 +555,16 @@ string joins; relation `.settings` extended to writes via per-request HTTP param
 `primary_key:`/`sample:` table clauses, all introspected and schema-dumped round-trip
 (ledger #31); partition lifecycle verbs on the PARTITION ID literal form (ledger #32).
 Suite: 353 examples green; harness unchanged (801 runs, 0 failures, 91 skips).
+
+**Phase 6 (cont.) — relations_test corpus.** *(landed — Iteration 15)*
+Vendored `relations_test.rb` (2,784 lines, 327 new runs) with its transitive models
+(bird, dats/*, engine, reader, wheel), fixtures (tags, taggings, categories_posts,
+cpk_orders) and eight new slice tables. Three adapter gaps surfaced and fixed TDD:
+no-op savepoint verbs (ledger #33), bare join column names (ledger #34),
+backtick-aware identifier matchers (ledger #35). Ten new skips, each a documented
+server limitation (no unique constraints / no rollback / functional-dependency
+GROUP BY / alias shadowing / table-named column vs qualified star / cpk prefetch).
+Suite: 363 examples green; harness 1,128 runs, 0 failures, 101 skips.
 
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
