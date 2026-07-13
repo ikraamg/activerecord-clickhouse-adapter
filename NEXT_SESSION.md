@@ -24,13 +24,11 @@ If `basics_test` lands early, candidates in value order: `has_one` +
 `habtm` association suites (small marginal cost now), or window-function relation
 sugar (the last big OLAP deferral).
 
-**Core-port follow-ups (small, from Iteration 17):** the port worktree still holds
-two uncommitted core-side edits (Gemfile swap, `connection_pool.migration_context`
-in `lib/tasks/clickhouse.rake`) — Ikraam decides if/when that becomes a core PR.
-The adapter's `ssl: true` path verifies certs (incumbent was VERIFY_NONE); prod
-sinks on self-signed certs need a `verify_mode`/`ssl_verify: false` escape hatch
-before this swap can deploy — worth a spec'd config option this iteration if time
-allows.
+**Core-port follow-ups (from Iteration 17):** the port worktree holds the
+uncommitted core-side edits (Gemfile swap, `connection_pool.migration_context` in
+`lib/tasks/clickhouse.rake`, `ssl_verify: false` on the prod sink config) — Ikraam
+decides if/when that becomes a core PR. The `ssl_verify: false` escape hatch itself
+landed here with live self-signed-TLS specs (compose serves HTTPS on 18443).
 
 ## Watch out for (carried forward + new)
 

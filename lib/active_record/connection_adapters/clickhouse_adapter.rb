@@ -31,7 +31,8 @@ module ActiveRecord
       end
 
       CONNECTION_PARAMETER_KEYS = %i[
-        host port username password database ssl connect_timeout read_timeout write_timeout
+        host port username password database ssl ssl_verify select_format
+        connect_timeout read_timeout write_timeout
         mutations_sync compression join_use_nulls async_insert wait_for_async_insert
       ].freeze
 

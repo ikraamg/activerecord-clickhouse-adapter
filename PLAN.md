@@ -68,6 +68,7 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | Bundler evaluates a path/git gem's gemspec at `bundler/setup` time; a gemspec `require_relative` that defines any `ActiveRecord` constant clobbers active_record.rb's `autoload :ConnectionAdapters` and breaks every later adapter require | Iteration 17 live |
 | `connection.migration_context` is gone in AR 8.1 — it lives on `connection_pool.migration_context` (TRMNL core's rake task assumed the old seam) | Iteration 17 live |
 | clickhouse-activerecord's `schema_migrations` state is not interoperable: it records versions in a ReplacingMergeTree with `active` flags, so a sink it migrated reports missing versions to this adapter — factory-reset before switching | Iteration 17 live |
+| `ssl: true` verifies certificates (Net::HTTP default); `ssl_verify: false` is the escape hatch for self-signed sinks — proven against the compose file's HTTPS listener (18443, self-signed cert in spec/support/tls) | Iteration 17 live |
 | `find_each(cursor: [...])` (Rails 8.1) batches pk-less tables over explicit ORDER BY columns | Iteration 4 live |
 | Clause grammar: `FROM t [FINAL] [SAMPLE f] PREWHERE ... WHERE ... ORDER BY ... LIMIT n BY cols LIMIT m SETTINGS ...` — `LIMIT m` before `LIMIT n BY` is a syntax error | Iteration 5 live |
 | `FINAL` on a non-replacing MergeTree raises code 181; `SAMPLE` without `SAMPLE BY` in DDL raises code 141 | Iteration 5 probe |
@@ -645,9 +646,11 @@ bytes). `insert_stream` streams Enumerables as chunked `JSONCompactEachRow` POST
 1k-row ingest 26.6 ms (`insert_all!`) → 5.6 ms; 100k lazy rows in one 336 ms
 request. Suite: 415 examples green; harness unchanged.
 
-**Phase 8 — Production hardening.**
-Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
-round-robin with health-aware failover, TLS verification ON by default, read-only user
+**Phase 8 — Production hardening.** *(TLS done — Iteration 17)*
+TLS: verification ON by default, `ssl_verify: false` escape hatch for self-signed sinks,
+proven against a real HTTPS listener in the compose file (self-signed cert in
+spec/support/tls). Still open: cluster/`ON CLUSTER` DDL, Replicated/Distributed engine
+support in the DSL, multi-replica round-robin with health-aware failover, read-only user
 support (`prevent_writes` integration).
 
 **Phase 9 — Real-world integration + release.** *(integration proven — Iteration 17)*
@@ -658,9 +661,10 @@ TRMNL core ported on the `clickhouse-adapter-port` worktree
 Telemetry write/read paths work live, and every ClickHouse-touching core spec passes
 with `CLICKHOUSE_PROOF_REQUIRED=true` (telemetry proof, models, log feed, activity
 log, admin dashboards, logs-tab feature specs — ~250 examples, 0 failures). Zero
-query changes needed; the only core-side edits were the Gemfile and one rake-task
-seam (`connection.migration_context` → `connection_pool.migration_context`). Fixes
-it forced here: ledger #39–#41. Still open for release: README (ankane style),
+query changes needed; the only core-side edits were the Gemfile, one rake-task
+seam (`connection.migration_context` → `connection_pool.migration_context`), and
+`ssl_verify: false` on the prod sink config (its cert is self-signed; the incumbent
+never verified). Fixes it forced here: ledger #39–#41 plus the TLS escape hatch. Still open for release: README (ankane style),
 CHANGELOG, CI matrix (Ruby 3.2/3.4/4.0 × AR 8.1/edge × ClickHouse 25.8 LTS/latest),
 0.1.0 gem release.
 

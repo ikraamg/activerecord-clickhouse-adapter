@@ -2,6 +2,7 @@
 
 require "json"
 require "net/http"
+require "openssl"
 require "uri"
 
 require "active_record/connection_adapters/clickhouse/row_binary"
@@ -128,11 +129,18 @@ module ActiveRecord
 
         def build_http
           http = Net::HTTP.new(@config[:host], @config[:port])
-          http.use_ssl = @config[:ssl] if @config.key?(:ssl)
+          configure_tls(http)
           http.open_timeout = @config[:connect_timeout] if @config[:connect_timeout]
           http.read_timeout = @config[:read_timeout] if @config[:read_timeout]
           http.write_timeout = @config[:write_timeout] if @config[:write_timeout]
           http
+        end
+
+        # Verification stays ON by default; ssl_verify: false is the explicit escape
+        # hatch for sinks terminating TLS with a self-signed certificate.
+        def configure_tls(http)
+          http.use_ssl = @config[:ssl] if @config.key?(:ssl)
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE if @config[:ssl_verify] == false
         end
 
         def perform(sql, params, format)
