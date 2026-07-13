@@ -171,27 +171,33 @@ module ActiveRecord
 
       # Terminal calculations over ClickHouse's aggregate-function library; separate
       # from RelationMethods because these execute immediately rather than build state.
+      # All accept merge: true (-Merge, finishing AggregateFunction state columns) and
+      # if: condition (-If, per-row conditional aggregation in a single scan); `if` is
+      # a Ruby keyword, so it travels in **options.
       module RelationCalculations
-        def uniq_count(column, exact: false)
-          pick_aggregate(exact ? "uniqExact" : "uniq", klass.arel_table[column])
+        def uniq_count(column, exact: false, merge: false, **options)
+          aggregate(exact ? "uniqExact" : "uniq", [klass.arel_table[column]],
+                    merge: merge, condition: options[:if])
         end
 
         # Parametric aggregates render as name(param)(args); Float/Integer coercion is
         # the injection guard for the parameter.
-        def quantile(fraction, column)
-          pick_aggregate("quantile(#{Float(fraction)})", klass.arel_table[column])
+        def quantile(fraction, column, merge: false, **options)
+          aggregate("quantile", [klass.arel_table[column]],
+                    parameter: Float(fraction), merge: merge, condition: options[:if])
         end
 
-        def top_k(count, column)
-          pick_aggregate("topK(#{Integer(count)})", klass.arel_table[column])
+        def top_k(count, column, merge: false, **options)
+          aggregate("topK", [klass.arel_table[column]],
+                    parameter: Integer(count), merge: merge, condition: options[:if])
         end
 
-        def arg_max(column, criterion)
-          pick_aggregate("argMax", klass.arel_table[column], klass.arel_table[criterion])
+        def arg_max(column, criterion, **options)
+          aggregate("argMax", [klass.arel_table[column], klass.arel_table[criterion]], condition: options[:if])
         end
 
-        def arg_min(column, criterion)
-          pick_aggregate("argMin", klass.arel_table[column], klass.arel_table[criterion])
+        def arg_min(column, criterion, **options)
+          aggregate("argMin", [klass.arel_table[column], klass.arel_table[criterion]], condition: options[:if])
         end
 
         # Table-level row estimate from metadata — O(1), ignores relation scopes.
@@ -206,8 +212,33 @@ module ActiveRecord
 
         private
 
-        def pick_aggregate(function, *columns)
-          unscope(:order, :select).pick(::Arel::Nodes::NamedFunction.new(function, columns))
+        def aggregate(name, columns, parameter: nil, merge: false, condition: nil)
+          raise ArgumentError, "merge: and if: cannot combine (ClickHouse has no -MergeIf)" if merge && condition
+
+          function = +name
+          function << "Merge" if merge
+          function << "If" if condition
+          function << "(#{parameter})" unless parameter.nil?
+          columns << condition_node(condition) if condition
+          pick_aggregate(function, columns)
+        end
+
+        # Hashes go through the relation's own predicate builder (ranges, arrays and
+        # casting come free); strings/arrays through sanitize_sql like prewhere.
+        def condition_node(condition)
+          return klass.unscoped.where(condition).where_clause.ast if condition.is_a?(Hash)
+
+          ::Arel.sql(klass.send(:sanitize_sql_for_conditions, condition))
+        end
+
+        # Ungrouped: one value. Grouped: a hash keyed like Rails' grouped calculations
+        # (scalar for one group column, array for several).
+        def pick_aggregate(function, columns)
+          node = ::Arel::Nodes::NamedFunction.new(function, columns)
+          return unscope(:order, :select).pick(node) if group_values.empty?
+
+          pluck(*group_values, node)
+            .to_h { |row| [group_values.many? ? row[0..-2] : row.first, row.last] }
         end
       end
 

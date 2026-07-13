@@ -52,9 +52,33 @@ module ActiveRecord
         def parse_enum_args = parse_comma_separated { parse_enum_mapping }
 
         def parse_aggregate_args
-          function_name = parse_identifier
+          function_name = parse_aggregate_function_label
           expect(",")
           [function_name, *parse_type_args]
+        end
+
+        # Parametric combinators (quantile(0.95), topK(10)) carry parameters in the
+        # function name itself; the raw balanced-paren text stays in the label. String
+        # parameters containing parens would break this — none exist in practice.
+        def parse_aggregate_function_label
+          name = parse_identifier
+          skip_whitespace
+          return name unless peek("(")
+
+          "#{name}#{consume_balanced_parens}"
+        end
+
+        def consume_balanced_parens
+          start = @position
+          depth = 0
+          loop do
+            char = @source[@position] or raise Error, "unterminated aggregate function parameters"
+            depth += 1 if char == "("
+            depth -= 1 if char == ")"
+            @position += 1
+            break if depth.zero?
+          end
+          @source[start...@position]
         end
 
         def parse_tuple_args

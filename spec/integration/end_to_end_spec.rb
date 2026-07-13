@@ -129,6 +129,57 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(model.where(duration_ms: nil).count).to eq(0)
   end
 
+  it "answers a conditional aggregate in one scan" do
+    expect(model.uniq_count(:device_id, if: { event_type: "render" })).to eq(2)
+  end
+
+  describe "the pre-aggregation pipeline (MV -> AggregatingMergeTree -> merged reads)" do
+    subject(:daily_model) do
+      Class.new(ActiveRecord::Base) do
+        include ActiveRecord::ConnectionAdapters::ClickHouse::Querying
+
+        self.table_name = "spine_daily"
+
+        def self.name = "SpineDaily"
+      end
+    end
+
+    before(:all) do
+      conn = ActiveRecord::Base.lease_connection
+      conn.drop_materialized_view("spine_daily_rollup", if_exists: true)
+      conn.drop_table("spine_daily", if_exists: true)
+      conn.create_table("spine_daily", engine: "AggregatingMergeTree", order: "day") do |t|
+        t.date :day
+        t.column :devices, "AggregateFunction(uniq, Int64)"
+        t.column :total_ms, "SimpleAggregateFunction(sum, Nullable(Int64))"
+      end
+      conn.create_materialized_view("spine_daily_rollup", to: "spine_daily", as: <<~SQL.squish)
+        SELECT toDate(ts) AS day, uniqState(device_id) AS devices,
+               sum(toNullable(toInt64(duration_ms))) AS total_ms
+        FROM spine_events GROUP BY day
+      SQL
+    end
+
+    after(:all) do
+      conn = ActiveRecord::Base.lease_connection
+      conn.drop_materialized_view("spine_daily_rollup", if_exists: true)
+      conn.drop_table("spine_daily", if_exists: true)
+    end
+
+    before { ActiveRecord::Base.lease_connection.execute("TRUNCATE TABLE spine_daily") }
+
+    it "streams inserts through the view and merges distinct counts" do
+      model.create!(device_id: 9, ts: Time.utc(2026, 7, 2, 8), event_type: "render", duration_ms: 5)
+      expect(daily_model.where(day: Date.new(2026, 7, 2)).uniq_count(:devices, merge: true)).to eq(1)
+    end
+
+    it "sums simple aggregate columns with plain Rails sum" do
+      model.create!(device_id: 9, ts: Time.utc(2026, 7, 2, 8), event_type: "render", duration_ms: 5)
+      model.create!(device_id: 9, ts: Time.utc(2026, 7, 2, 9), event_type: "render", duration_ms: 7)
+      expect(daily_model.where(day: Date.new(2026, 7, 2)).sum(:total_ms)).to eq(12)
+    end
+  end
+
   it "matches nothing when finding by an empty id list" do
     expect(model.where(device_id: []).count).to eq(0)
   end

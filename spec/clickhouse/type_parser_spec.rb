@@ -119,6 +119,22 @@ RSpec.describe ActiveRecord::ConnectionAdapters::ClickHouse::TypeParser do
     end
   end
 
+  context "with a parametric AggregateFunction" do
+    let(:type_string) { "AggregateFunction(quantile(0.95), Int64)" }
+
+    it "keeps the parameters inside the function label" do
+      expect(parse).to eq(node("AggregateFunction", "quantile(0.95)", node("Int64")))
+    end
+  end
+
+  context "with a multi-parameter AggregateFunction" do
+    let(:type_string) { "AggregateFunction(quantiles(0.5, 0.9), Int64)" }
+
+    it "keeps all parameters in the label verbatim" do
+      expect(parse).to eq(node("AggregateFunction", "quantiles(0.5, 0.9)", node("Int64")))
+    end
+  end
+
   context "when input is malformed" do
     {
       "" => "empty type string",
