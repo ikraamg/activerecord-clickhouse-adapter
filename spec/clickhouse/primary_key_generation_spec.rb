@@ -41,6 +41,12 @@ RSpec.describe "ClickHouse client-side primary key generation" do
       t.integer :device_id, limit: 8
       t.integer :id, limit: 8
     end
+    conn.drop_table("pk_gen_stamped", if_exists: true)
+    conn.create_table("pk_gen_stamped", order: "id") do |t|
+      t.integer :id, limit: 8
+      t.string :label, default: ""
+      t.datetime :stamped_at, precision: 6, default: -> { "now64(6)" }
+    end
   end
 
   after(:all) do
@@ -48,6 +54,7 @@ RSpec.describe "ClickHouse client-side primary key generation" do
     conn.drop_table("pk_gen_events", if_exists: true)
     conn.drop_table("pk_gen_documents", if_exists: true)
     conn.drop_table("pk_gen_readings", if_exists: true)
+    conn.drop_table("pk_gen_stamped", if_exists: true)
   end
 
   before do
@@ -104,6 +111,42 @@ RSpec.describe "ClickHouse client-side primary key generation" do
   it "raises for primary key types it cannot generate" do
     expect { connection.next_sequence_value("pk_gen_events.name") }
       .to raise_error(ActiveRecord::ActiveRecordError, /cannot generate/i)
+  end
+
+  it "raises for a nil sequence (composite primary keys have none)" do
+    expect { connection.next_sequence_value(nil) }
+      .to raise_error(ActiveRecord::ActiveRecordError, /cannot generate/i)
+  end
+
+  # Models may override sequence_name with an arbitrary label (Oracle legacy, e.g.
+  # Rails' own Company model); the prefetch gate already vetted the table.
+  it "generates integer ids for custom sequence labels" do
+    expect(connection.next_sequence_value("events_nonstd_seq")).to be_a(Integer)
+  end
+
+  # Rails asks for auto-populated columns back after insert; without RETURNING the
+  # prefetched pk is the only value the adapter can supply, and it must land on the
+  # pk attribute — not on whichever default-function column Rails listed first.
+  describe "write-back alongside default-function columns" do
+    let(:stamped_model) do
+      Class.new(ActiveRecord::Base) do
+        self.table_name = "pk_gen_stamped"
+        self.primary_key = "id"
+
+        def self.name = "PkGenStamped"
+      end
+    end
+
+    before { connection.execute("TRUNCATE TABLE pk_gen_stamped") }
+
+    it "assigns the generated id to the pk attribute" do
+      expect(stamped_model.create!(label: "probe").id).to be_a(Integer)
+    end
+
+    it "does not write the id into the default-function column" do
+      record = stamped_model.create!(label: "probe")
+      expect(record.reload.stamped_at).to be_within(60).of(Time.now.utc)
+    end
   end
 
   # Rails checks prefetch_primary_key? on every create; without a cache that is one

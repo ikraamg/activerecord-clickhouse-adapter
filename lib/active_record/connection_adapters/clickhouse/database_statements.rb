@@ -55,21 +55,35 @@ module ActiveRecord
           "#{table_name}.#{column_name}"
         end
 
+        # Sequence names are usually the "table.column" this adapter encodes, but models
+        # may override sequence_name with a free-form label (Oracle legacy); those get
+        # integer ids on trust — the prefetch gate already vetted the table. nil means a
+        # composite primary key, which Rails' prefetch path cannot populate.
         def next_sequence_value(sequence_name)
+          raise_ungeneratable_primary_key(sequence_name) if sequence_name.nil?
+
           table_name, column_name = sequence_name.to_s.split(".", 2)
-          generatable_column, sql_type = table_name && generatable_primary_key(table_name)
+          return generate_time_ordered_id unless column_name
+
+          generatable_column, sql_type = generatable_primary_key(table_name)
           raise_ungeneratable_primary_key(sequence_name) unless generatable_column == column_name
 
           sql_type == "UUID" ? generate_uuid_v7 : generate_time_ordered_id
         end
 
+        # Without RETURNING the server hands nothing back after an insert, whatever a
+        # column's default expression says; only the prefetched pk is knowable.
+        def return_value_after_insert?(_column) = false
+
         # No INSERT ... RETURNING in ClickHouse: the prefetched client-side id is the
-        # only post-insert-knowable value, so surface it as the returning row that
-        # _create_record writes back onto the record. The signature is Rails'
+        # only post-insert-knowable value, so surface it aligned to the requested
+        # returning columns for _create_record's write-back. The signature is Rails'
         # DatabaseStatements#insert contract.
         def insert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [], returning: nil) # rubocop:disable Metrics/ParameterLists
           inserted_id = super(arel, name, pk, id_value, sequence_name, binds, returning: nil)
-          returning.nil? ? inserted_id : [inserted_id]
+          return inserted_id if returning.nil?
+
+          returning.map { |column| column.to_s == pk.to_s ? inserted_id : nil }
         end
 
         # The abstract default (CURRENT_TIMESTAMP) is not a ClickHouse identifier.
