@@ -287,8 +287,24 @@ module ActiveRecord
           end
         end
 
+        TRAILING_COMMENTS = %r{(?:\s*/\*(?:[^*]|\*(?!/))*\*/)+\s*\z}
+        INSERT_STATEMENT = /\A\s*INSERT\b/i
+        private_constant :TRAILING_COMMENTS, :INSERT_STATEMENT
+
+        # ClickHouse reads everything after VALUES with the Values input format, which
+        # rejects trailing comments (probed 2026-07-13), so sqlcommenter tags appended
+        # by Rails' QueryLogs are hoisted to the front of INSERT statements.
+        def hoist_trailing_comments(sql)
+          return sql unless INSERT_STATEMENT.match?(sql)
+
+          comments = sql[TRAILING_COMMENTS]
+          return sql unless comments
+
+          "#{comments.strip} #{sql[0...-comments.length]}"
+        end
+
         def perform_query(raw_connection, sql, binds, type_casted_binds, prepare:, notification_payload:, batch:) # rubocop:disable Lint/UnusedMethodArgument
-          sql, params = materialize_query_params(sql, binds, type_casted_binds)
+          sql, params = materialize_query_params(hoist_trailing_comments(sql), binds, type_casted_binds)
           result = raw_connection.execute(sql, params: params)
           verified!
           if notification_payload
