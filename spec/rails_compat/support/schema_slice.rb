@@ -16,22 +16,35 @@ module ARCompat
     PRIMARY_KEYS = {
       "cpk_books" => %i[author_id id],
       "cpk_chapters" => %i[author_id id],
-      "non_primary_keys" => nil
+      "cpk_posts" => %i[title author],
+      "non_primary_keys" => nil,
+      "parrots_treasures" => nil,
+      "peoples_treasures" => nil
     }.freeze
 
     # Tables the harness must reset between tests beyond the fixture tables, which
     # reload every test anyway (decision #15: truncation, no transactions to roll back).
     TABLES = %w[
-      1_need_quoting accounts admin_users aircraft audit_logs author_addresses author_favorites authors
+      1_need_quoting accounts admin_users aircraft attachments audit_logs author_addresses
+      author_favorites authors
       auto_id_tests birds books bulbs cars carts
-      categories categories_posts categorizations clothing_items clubs comments companies computers
+      categories categories_posts categorizations citations clothing_items clubs colleges columns
+      comment_overlapping_counter_caches comments
+      companies computers
       computers_developers contracts
-      cpk_books cpk_chapters cpk_orders cpk_reviews customers dashboards developers
+      cpk_authors cpk_books cpk_chapters cpk_comments cpk_orders cpk_posts cpk_reviews customers
+      dashboards developers
       developers_projects
-      dog_lovers dogs edges engines entrants having mateys minimalistics minivans non_primary_keys
-      numeric_data organizations parrots people posts projects ratings readers ship_parts ships
-      speedometers subscribers subscriptions taggings tags tires topics
-      toooooooooooooooooooooooooooooooooo_long_table_names toys treasures wheels
+      dog_lovers dogs edges engines entrants essays having humans images interests invoices jobs
+      line_items mateys members
+      minimalistics minivans nodes non_primary_keys
+      numeric_data organizations parrots parrots_treasures people peoples_treasures pirates
+      post_comments_counts posts projects ratings readers records references
+      sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
+      ship_parts ships
+      speedometers sponsors students subscribers subscriptions taggings tags tires topics
+      toooooooooooooooooooooooooooooooooo_long_table_names toys treasures trees
+      user_comments_counts wheels zines
     ].freeze
 
     module_function
@@ -73,6 +86,12 @@ module ARCompat
         t.integer :wheels_count, default: 0
         t.datetime :wheels_owned_at, precision: 6, null: true
         t.datetime :manufactured_at, precision: 6, default: -> { "now64(6)" }
+      end
+
+      connection.create_table :attachments, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :record_type
+        t.integer :record_id, limit: 8
       end
 
       connection.create_table :audit_logs, force: true, order: "id" do |t|
@@ -198,6 +217,13 @@ module ARCompat
         t.boolean :special, null: true
       end
 
+      connection.create_table :citations, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :book1_id, limit: 8, null: true
+        t.integer :book2_id, limit: 8, null: true
+        t.integer :citation_id, limit: 8, null: true
+      end
+
       connection.create_table :clothing_items, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :clothing_type, null: true
@@ -211,6 +237,24 @@ module ARCompat
         t.integer :id, limit: 8
         t.string :name, null: true
         t.integer :category_id, limit: 8, null: true
+      end
+
+      connection.create_table :colleges, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name
+      end
+
+      connection.create_table :columns, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :record_id, limit: 8, null: true
+      end
+
+      connection.create_table :comment_overlapping_counter_caches, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :user_comments_count_id, limit: 8, null: true
+        t.integer :post_comments_count_id, limit: 8, null: true
+        t.string :commentable_type, null: true
+        t.integer :commentable_id, limit: 8, null: true
       end
 
       connection.create_table :comments, force: true, order: "id" do |t|
@@ -256,6 +300,24 @@ module ARCompat
         t.integer :company_id, limit: 8, null: true
         t.string :metadata, null: true
         t.integer :count, null: true
+      end
+
+      connection.create_table :cpk_authors, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
+      connection.create_table :cpk_posts, force: true, order: "(title, author)" do |t|
+        t.string :title
+        t.string :author
+      end
+
+      connection.create_table :cpk_comments, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :commentable_title, null: true
+        t.string :commentable_author, null: true
+        t.string :commentable_type, null: true
+        t.string :text, null: true
       end
 
       connection.create_table :cpk_books, force: true, order: "(author_id, id)" do |t|
@@ -372,15 +434,73 @@ module ARCompat
         t.integer :course_id, limit: 8
       end
 
+      # Upstream's writer_id/category_id/author_id are strings: essays fixtures key
+      # them by name, not by numeric id.
+      connection.create_table :essays, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :type, null: true
+        t.string :name, null: true
+        t.string :writer_id, null: true
+        t.string :writer_type, null: true
+        t.string :category_id, null: true
+        t.string :author_id, null: true
+        t.integer :book_id, limit: 8, null: true
+      end
+
       connection.create_table :having, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :where, null: true
+      end
+
+      connection.create_table :humans, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
+      connection.create_table :images, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :imageable_identifier, limit: 8, null: true
+        t.string :imageable_class, null: true
+      end
+
+      connection.create_table :interests, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :topic, null: true
+        t.integer :human_id, limit: 8, null: true
+        t.integer :polymorphic_human_id, limit: 8, null: true
+        t.string :polymorphic_human_type, null: true
+        t.integer :zine_id, limit: 8, null: true
+      end
+
+      connection.create_table :invoices, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :balance, null: true
+        t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :jobs, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :ideal_reference_id, limit: 8, null: true
+      end
+
+      connection.create_table :line_items, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :invoice_id, limit: 8, null: true
+        t.integer :amount, null: true
       end
 
       connection.create_table :mateys, force: true, order: "(pirate_id, target_id)" do |t|
         t.integer :pirate_id, limit: 8
         t.integer :target_id, limit: 8
         t.integer :weight, null: true
+      end
+
+      connection.create_table :members, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :member_type_id, limit: 8, null: true
+        t.string :admittable_type, null: true
+        t.integer :admittable_id, limit: 8, null: true
       end
 
       connection.create_table :minimalistics, force: true, order: "id" do |t|
@@ -411,6 +531,14 @@ module ARCompat
         t.decimal :atoms_in_universe, precision: 55, scale: 0, null: true
       end
 
+      connection.create_table :nodes, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :tree_id, limit: 8, null: true
+        t.integer :parent_id, limit: 8, null: true
+        t.string :name, null: true
+        t.datetime :updated_at, precision: 6, null: true
+      end
+
       # Upstream declares non_primary_keys id: false with a plain id column — the model
       # must stay primary-key-less (PRIMARY_KEYS maps it to nil).
       connection.create_table :non_primary_keys, force: true, order: "id" do |t|
@@ -421,6 +549,11 @@ module ARCompat
       connection.create_table :organizations, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
+      end
+
+      connection.create_table :parrots_treasures, force: true, order: "(parrot_id, treasure_id)" do |t|
+        t.integer :parrot_id, limit: 8
+        t.integer :treasure_id, limit: 8
       end
 
       connection.create_table :parrots, force: true, order: "id" do |t|
@@ -454,6 +587,25 @@ module ARCompat
         t.integer :cars_count, default: 0
         t.datetime :created_at, precision: 6
         t.datetime :updated_at, precision: 6
+      end
+
+      connection.create_table :peoples_treasures, force: true, order: "(rich_person_id, treasure_id)" do |t|
+        t.integer :rich_person_id, limit: 8
+        t.integer :treasure_id, limit: 8
+      end
+
+      connection.create_table :pirates, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :catchphrase, null: true
+        t.integer :parrot_id, limit: 8, null: true
+        t.integer :non_validated_parrot_id, limit: 8, null: true
+        t.datetime :created_on, precision: 6, null: true
+        t.datetime :updated_on, precision: 6, null: true
+      end
+
+      connection.create_table :post_comments_counts, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :comments_count, default: 0, null: true
       end
 
       connection.create_table :posts, force: true, order: "id" do |t|
@@ -493,6 +645,52 @@ module ARCompat
         t.integer :value, null: true
       end
 
+      connection.create_table :references, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :person_id, limit: 8, null: true
+        t.integer :job_id, limit: 8, null: true
+        t.boolean :favorite, null: true
+        t.integer :lock_version, default: 0, null: true
+      end
+
+      connection.create_table :records, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+      end
+
+      connection.create_table :sharded_blogs, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
+      connection.create_table :sharded_blog_posts, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :title, null: true
+        t.string :parent_type, null: true
+        t.integer :parent_id, limit: 8, null: true
+        t.integer :blog_id, limit: 8, null: true
+        t.integer :revision, null: true
+      end
+
+      connection.create_table :sharded_comments, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :body, null: true
+        t.integer :blog_post_id, limit: 8, null: true
+        t.integer :blog_id, limit: 8, null: true
+      end
+
+      connection.create_table :sharded_tags, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :blog_id, limit: 8, null: true
+      end
+
+      connection.create_table :sharded_blog_posts_tags, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :blog_id, limit: 8, null: true
+        t.integer :blog_post_id, limit: 8, null: true
+        t.integer :tag_id, limit: 8, null: true
+      end
+
       connection.create_table :ship_parts, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
@@ -517,6 +715,22 @@ module ARCompat
         t.string :speedometer_id
         t.string :name, null: true
         t.string :dashboard_id, null: true
+      end
+
+      connection.create_table :sponsors, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :club_id, limit: 8, null: true
+        t.string :sponsorable_type, null: true
+        t.integer :sponsorable_id, limit: 8, null: true
+        t.string :sponsor_type, null: true
+        t.integer :sponsor_id, limit: 8, null: true
+      end
+
+      connection.create_table :students, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.boolean :active, null: true
+        t.integer :college_id, limit: 8, null: true
       end
 
       connection.create_table :subscribers, force: true, order: "nick" do |t|
@@ -552,6 +766,11 @@ module ARCompat
       connection.create_table :tires, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :car_id, limit: 8, null: true
+      end
+
+      connection.create_table :user_comments_counts, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :comments_count, default: 0, null: true
       end
 
       connection.create_table :wheels, force: true, order: "id" do |t|
@@ -605,6 +824,17 @@ module ARCompat
         t.integer :looter_id, limit: 8, null: true
         t.string :looter_type, null: true
         t.integer :ship_id, limit: 8, null: true
+      end
+
+      connection.create_table :trees, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :zines, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :title, null: true
       end
     end
 

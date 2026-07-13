@@ -80,6 +80,92 @@ RelationTest:
   test_find_or_initialize_by_with_cpk_association: >-
     Rails' prefetch seam cannot populate one column of a composite primary key
 
+BelongsToAssociationsTest:
+  # assert_queries_count counts BEGIN/COMMIT on transactional adapters; this adapter
+  # emits no transaction SQL and adds one count-first SELECT per mutation (decision #26),
+  # so touch/counter-cache query tallies never line up with upstream's expectations.
+  test_belongs_to_with_touch_option_on_touch: &query_count_tally >-
+    query-count tally assumes BEGIN/COMMIT plus single-statement writes; the adapter
+    emits no transaction SQL and one count-first SELECT per mutation
+  test_belongs_to_with_touch_option_on_touch_and_removed_parent: *query_count_tally
+  test_belongs_to_with_touch_option_on_destroy_with_destroyed_parent: *query_count_tally
+  test_belongs_to_with_touch_on_multiple_records: *query_count_tally
+  test_belongs_to_touch_with_reassigning: *query_count_tally
+  test_belongs_to_counter_after_save: *query_count_tally
+  test_dont_find_target_when_saving_foreign_key_after_stale_association_loaded: *query_count_tally
+  test_runs_parent_presence_check_if_parent_changed_or_nil: *query_count_tally
+
+  # The adapter deliberately reports no primary key from the server (ledger #7): a
+  # ClickHouse PRIMARY KEY is an index prefix, not a uniqueness guarantee. The harness
+  # assigns model-level primary keys at load, but models defined inside a test body
+  # never get one, so Rails builds `WHERE `` IS NULL` or refuses default orders.
+  test_default: &anonymous_model_primary_key >-
+    in-test anonymous model needs a server-reported primary key; the adapter
+    deliberately reports none (ledger #7)
+  test_runs_parent_presence_check_if_parent_has_not_changed_and_belongs_to_required_validates_foreign_key_is_set: *anonymous_model_primary_key
+  test_default_scope_on_relations_is_not_cached: *anonymous_model_primary_key
+  test_polymorphic_stale_state_handles_nil_foreign_keys_correctly: *anonymous_model_primary_key
+
+  # Same seam as PersistenceTest/RelationTest: Rails' prefetch path asks the adapter
+  # for one generated value although the composite/query-constrained key is assigned.
+  test_belongs_to_with_explicit_composite_primary_key: &composite_prefetch >-
+    Rails' prefetch seam cannot populate one column of a composite primary key
+  test_building_the_belonging_object_for_composite_primary_key: *composite_prefetch
+  test_should_set_composite_foreign_key_on_association_when_key_changes_on_associated_record: *composite_prefetch
+  test_association_with_query_constraints_assigns_id_on_replacement: *composite_prefetch
+  test_belongs_to_with_inverse_association_for_composite_primary_key: *composite_prefetch
+
+  # before_destroy halting relies on rolling the already-deleted children back.
+  test_dependency_should_halt_parent_destruction: &destroy_halt_rollback >-
+    halting destroy needs a real transaction rollback; ClickHouse transactions are honest no-ops
+  test_dependency_should_halt_parent_destruction_with_cascaded_three_levels: *destroy_halt_rollback
+
+  test_belongs_to_with_primary_key_joins_on_correct_column: >-
+    assertion allowlists backtick quoting to Mysql2/Trilogy; ClickHouse quotes with
+    backticks but is not in the branch
+  test_raises_type_mismatch_with_namespaced_class: >-
+    inline create_table without order:; the adapter requires an explicit sorting key
+
+HasManyAssociationsTest:
+  # Same families as BelongsToAssociationsTest: query tallies assume transaction SQL
+  # and single-statement writes; the adapter emits neither.
+  test_inverse_on_before_validate: *query_count_tally
+  test_create_without_loading_association: *query_count_tally
+  "test_delete_all,_when_not_loaded,_doesn't_load_the_records": *query_count_tally
+  test_counter_cache_updates_in_memory_after_update_with_inverse_of_disabled: *query_count_tally
+  test_counter_cache_updates_in_memory_after_update_with_inverse_of_enabled: *query_count_tally
+
+  # Collection replace/destroy relies on rolling back the writes a failed replace
+  # already made; ClickHouse transactions are honest no-ops.
+  test_transactions_when_replacing_on_persisted: &collection_rollback >-
+    restoring the collection needs a real transaction rollback; ClickHouse transactions
+    are honest no-ops
+  test_transaction_when_deleting_persisted: *collection_rollback
+  test_dependence_with_transaction_support_on_failure: *collection_rollback
+  test_create_children_could_be_rolled_back_by_after_save: *collection_rollback
+
+  test_in_memory_replacements_do_not_execute_callbacks: *anonymous_model_primary_key
+  test_default_scope_on_relations_is_not_cached: *anonymous_model_primary_key
+  test_anonymous_has_many: *anonymous_model_primary_key
+
+  # ClickHouse mutations resolve WHERE against an internal projection where
+  # table-qualified names raise UNKNOWN_IDENTIFIER, so the adapter compiles DELETEs
+  # with bare column names (decision #26); the assertion demands qualified ones.
+  test_sharded_deleting_models: >-
+    assertion expects table-qualified DELETE columns; ClickHouse mutations require bare names
+
+  # Two single-row inserts land in two parts, and an unordered SELECT returns parts
+  # in scan order, not insertion order.
+  test_replace_returns_target: >-
+    unordered association read; ClickHouse part-scan order is not insertion order
+
+DeprecatedBelongsToAssociationsTest:
+  # The test bypasses the ORM with raw `UPDATE cars SET name = '…'`; ClickHouse's
+  # lightweight UPDATE statement requires a WHERE clause (SYNTAX_ERROR).
+  test_reload_<association>: &raw_update_without_where >-
+    raw UPDATE without WHERE; ClickHouse lightweight UPDATE requires a WHERE clause
+  test_reset_<association>: *raw_update_without_where
+
 InsertAllTest:
   # These three exercise semantics ClickHouse does not have: unique constraints and
   # ON CONFLICT handling. The adapter raises honestly from insert_all/upsert_all

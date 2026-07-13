@@ -14,6 +14,6 @@ require "schema_slice"
 
 ARCompat::SchemaSlice.load(ActiveRecord::Base.lease_connection)
 
-Dir[File.expand_path("vendor/cases/*_test.rb", __dir__)].each { |file| require file }
+Dir[File.expand_path("vendor/cases/**/*_test.rb", __dir__)].each { |file| require file }
 
 ARCompat::SchemaSlice.assign_model_primary_keys

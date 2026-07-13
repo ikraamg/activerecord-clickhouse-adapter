@@ -9,10 +9,13 @@ require "active_record/fixtures"
 require "active_record/testing/query_assertions"
 require "active_support/test_case"
 require "active_support/testing/method_call_assertions"
+# Upstream suites call bare class_eval inside test bodies; Kernel#class_eval comes
+# from this core_ext, which the full Rails test env loads transitively.
+require "active_support/core_ext/kernel/singleton_class"
 require "yaml"
 
 module ARCompat
-  SKIPS = YAML.load_file(File.expand_path("../../skips.yml", __dir__)) || {}
+  SKIPS = YAML.load_file(File.expand_path("../../skips.yml", __dir__), aliases: true) || {}
 
   CONNECTION_CONFIG = {
     adapter: "clickhouse",
@@ -25,6 +28,10 @@ module ARCompat
   }.freeze
 end
 
+# Upstream test/support/connection.rb runs every suite with the global async query
+# executor enabled; async-flavored tests assert payload[:async] on real thread-pool loads.
+ActiveRecord.async_query_executor = :global_thread_pool
+
 ActiveRecord::Base.establish_connection(ARCompat::CONNECTION_CONFIG)
 
 # Upstream test/support/global_config.rb runs the suites with this future default on.
@@ -32,6 +39,25 @@ ActiveRecord.raise_on_missing_required_finder_order_columns = true
 
 # Quote "type" if it's a reserved word for the current connection (upstream helper.rb).
 QUOTED_TYPE = ActiveRecord::Base.lease_connection.quote_column_name("type")
+
+# Upstream defines this in test/cases/helper.rb; async query tests include it to
+# drain the pool's async executor before asserting.
+module WaitForAsyncTestHelper
+  private
+
+  def wait_for_async_query(connection = ActiveRecord::Base.lease_connection, timeout: 5)
+    return unless connection.async_enabled?
+
+    executor = connection.pool.async_executor
+    (timeout * 100).times do
+      return unless executor.scheduled_task_count > executor.completed_task_count
+
+      sleep 0.01
+    end
+
+    raise Timeout::Error, "The async executor wasn't drained after #{timeout} seconds"
+  end
+end
 
 module ARCompat
   # Mirrors upstream's AdapterHelper, which is both included and extended.
@@ -125,6 +151,46 @@ module ActiveRecord
       ActiveRecord::Base.time_zone_aware_attributes = old_awareness
       ActiveRecord::Base.time_zone_aware_types = old_aware_types
       Time.zone = old_zone
+    end
+
+    def reset_callbacks(klass, kind)
+      old_callbacks = {}
+      old_callbacks[klass] = klass.send("_#{kind}_callbacks").dup
+      klass.subclasses.each do |subclass|
+        old_callbacks[subclass] = subclass.send("_#{kind}_callbacks").dup
+      end
+      yield
+    ensure
+      klass.send("_#{kind}_callbacks=", old_callbacks[klass])
+      klass.subclasses.each do |subclass|
+        subclass.send("_#{kind}_callbacks=", old_callbacks[subclass])
+      end
+    end
+
+    def with_has_many_inversing(model = ActiveRecord::Base)
+      old = model.has_many_inversing
+      model.has_many_inversing = true
+      yield
+    ensure
+      model.has_many_inversing = old
+    end
+
+    def with_automatic_scope_inversing(*reflections)
+      old = reflections.map { |reflection| reflection.klass.automatic_scope_inversing }
+
+      reflections.each do |reflection|
+        reflection.klass.automatic_scope_inversing = true
+        reflection.remove_instance_variable(:@inverse_name) if reflection.instance_variable_defined?(:@inverse_name)
+        reflection.remove_instance_variable(:@inverse_of) if reflection.instance_variable_defined?(:@inverse_of)
+      end
+
+      yield
+    ensure
+      reflections.each_with_index do |reflection, i|
+        reflection.klass.automatic_scope_inversing = old[i]
+        reflection.remove_instance_variable(:@inverse_name) if reflection.instance_variable_defined?(:@inverse_name)
+        reflection.remove_instance_variable(:@inverse_of) if reflection.instance_variable_defined?(:@inverse_of)
+      end
     end
 
     def with_env_tz(new_tz = "US/Eastern")
