@@ -94,6 +94,7 @@ BelongsToAssociationsTest:
   test_belongs_to_counter_after_save: *query_count_tally
   test_dont_find_target_when_saving_foreign_key_after_stale_association_loaded: *query_count_tally
   test_runs_parent_presence_check_if_parent_changed_or_nil: *query_count_tally
+  test_skips_parent_presence_check_if_parent_has_not_changed: *query_count_tally
 
   # The adapter deliberately reports no primary key from the server (ledger #7): a
   # ClickHouse PRIMARY KEY is an index prefix, not a uniqueness guarantee. The harness
@@ -182,3 +183,35 @@ InsertAllTest:
   test_insert_all_and_upsert_all_works_with_composite_primary_keys_when_unique_by_is_not_provided: *no_upsert
   test_upsert_all_implicitly_sets_primary_keys_when_nil: >-
     upsert_all needs conflict semantics, which the adapter honestly rejects
+
+BasicsTest:
+  # The adapter deliberately reports no primary key from the server (ledger #7); the
+  # harness assigns model-level pks at load, which cannot reach models defined inside
+  # a test body or models whose only_columns excludes id.
+  test_dup_with_aggregate_of_same_name_as_attribute: *anonymous_model_primary_key
+  test_marshal_between_processes: *anonymous_model_primary_key
+  test_permitted_columns_have_attribute_methods: >-
+    only_columns hides id, so the harness cannot assign a model-level primary key and
+    the adapter deliberately reports none (ledger #7)
+
+  test_column_names_are_escaped: >-
+    upstream's bad-char map enumerates adapters without a ClickHouse entry; backtick
+    escaping is proven in spec/clickhouse/quoting_spec.rb
+
+  test_primary_key_and_references_columns_should_be_identical_type: >-
+    slice translation: fk columns are Nullable(Int64) while ids are Int64 (schema-slice
+    rule: columns nullable by default)
+
+  test_find_keeps_multiple_group_values: >-
+    SELECT t.* GROUP BY t.id needs functional-dependency GROUP BY (NOT_AN_AGGREGATE)
+
+  # Upstream topics.bonus_time is a TIME column; ClickHouse has no TIME type, and the
+  # slice's DateTime64 stand-in does not cast bare clock strings like "5:42:00AM".
+  test_attributes_on_dummy_time: &no_time_type >-
+    ClickHouse has no TIME type; the slice's bonus_time is DateTime64, which does not
+    cast bare clock strings
+  test_utc_as_time_zone: *no_time_type
+
+  test_respect_internal_encoding: >-
+    column names arrive over the HTTP wire as UTF-8; Encoding.default_internal is not
+    applied to schema strings

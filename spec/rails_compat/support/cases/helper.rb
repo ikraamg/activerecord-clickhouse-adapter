@@ -32,10 +32,19 @@ end
 # executor enabled; async-flavored tests assert payload[:async] on real thread-pool loads.
 ActiveRecord.async_query_executor = :global_thread_pool
 
-ActiveRecord::Base.establish_connection(ARCompat::CONNECTION_CONFIG)
+# Upstream registers arunit/arunit2 as named configurations so suites can
+# `connects_to database: { writing: :arunit }`. Both point at the one test server
+# here; cross-database distinctions get manifest skips.
+ActiveRecord::Base.configurations = {
+  "arunit" => ARCompat::CONNECTION_CONFIG.transform_keys(&:to_s),
+  "arunit2" => ARCompat::CONNECTION_CONFIG.transform_keys(&:to_s)
+}
+ActiveRecord::Base.establish_connection(:arunit)
 
-# Upstream test/support/global_config.rb runs the suites with this future default on.
+# Upstream test/support/global_config.rb runs the suites with these settings.
 ActiveRecord.raise_on_missing_required_finder_order_columns = true
+ActiveRecord.raise_on_assign_to_attr_readonly = true
+ActiveRecord.belongs_to_required_validates_foreign_key = false
 
 # Quote "type" if it's a reserved word for the current connection (upstream helper.rb).
 QUOTED_TYPE = ActiveRecord::Base.lease_connection.quote_column_name("type")

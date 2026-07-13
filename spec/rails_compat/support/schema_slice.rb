@@ -28,23 +28,25 @@ module ARCompat
       1_need_quoting accounts admin_users aircraft attachments audit_logs author_addresses
       author_favorites authors
       auto_id_tests birds books bulbs cars carts
-      categories categories_posts categorizations citations clothing_items clubs colleges columns
+      categories categories_posts categorizations citations clothing_items clubs
+      cold_jokes colleges colnametests columns
       comment_overlapping_counter_caches comments
       companies computers
       computers_developers contracts
       cpk_authors cpk_books cpk_chapters cpk_comments cpk_orders cpk_posts cpk_reviews customers
       dashboards developers
       developers_projects
-      dog_lovers dogs edges engines entrants essays having humans images interests invoices jobs
-      line_items mateys members
+      dog_lovers dogs edges engines entrants essays funny_jokes having humans images interests
+      invoices jobs line_items mateys members
       minimalistics minivans nodes non_primary_keys
-      numeric_data organizations parrots parrots_treasures people peoples_treasures pirates
+      numeric_data organizations owners parrots parrots_treasures people peoples_treasures
+      pets pirates
       post_comments_counts posts projects ratings readers records references
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
       ship_parts ships
       speedometers sponsors students subscribers subscriptions taggings tags tires topics
       toooooooooooooooooooooooooooooooooo_long_table_names toys treasures trees
-      user_comments_counts wheels zines
+      user_comments_counts warehouse-things weirds wheels zines
     ].freeze
 
     module_function
@@ -242,6 +244,16 @@ module ARCompat
       connection.create_table :colleges, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name
+      end
+
+      connection.create_table :colnametests, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :references
+      end
+
+      connection.create_table :cold_jokes, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :cold_name, null: true
       end
 
       connection.create_table :columns, force: true, order: "id" do |t|
@@ -447,6 +459,11 @@ module ARCompat
         t.integer :book_id, limit: 8, null: true
       end
 
+      connection.create_table :funny_jokes, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
       connection.create_table :having, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :where, null: true
@@ -551,6 +568,14 @@ module ARCompat
         t.string :name, null: true
       end
 
+      connection.create_table :owners, force: true, order: "owner_id" do |t|
+        t.integer :owner_id, limit: 8
+        t.string :name, null: true
+        t.datetime :updated_at, precision: 6, null: true
+        t.datetime :happy_at, precision: 6, null: true
+        t.string :essay_id, null: true
+      end
+
       connection.create_table :parrots_treasures, force: true, order: "(parrot_id, treasure_id)" do |t|
         t.integer :parrot_id, limit: 8
         t.integer :treasure_id, limit: 8
@@ -592,6 +617,14 @@ module ARCompat
       connection.create_table :peoples_treasures, force: true, order: "(rich_person_id, treasure_id)" do |t|
         t.integer :rich_person_id, limit: 8
         t.integer :treasure_id, limit: 8
+      end
+
+      connection.create_table :pets, force: true, order: "pet_id" do |t|
+        t.integer :pet_id, limit: 8
+        t.string :name, null: true
+        t.integer :owner_id, limit: 8, null: true
+        t.datetime :created_at, precision: 6
+        t.datetime :updated_at, precision: 6
       end
 
       connection.create_table :pirates, force: true, order: "id" do |t|
@@ -773,6 +806,18 @@ module ARCompat
         t.integer :comments_count, default: 0, null: true
       end
 
+      connection.create_table :weirds, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string "a$b", null: true
+        t.string "なまえ", null: true
+        t.string :from, null: true
+      end
+
+      connection.create_table "warehouse-things", force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :value, null: true
+      end
+
       connection.create_table :wheels, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :size, null: true
@@ -840,9 +885,10 @@ module ARCompat
 
     # Upstream models assume the schema gives them a primary key; the adapter reports
     # none (ClickHouse sorting keys are not unique), so the harness declares them.
+    # Abstract classes qualify too when they pin a table (LoosePerson → people).
     def assign_model_primary_keys
       ActiveRecord::Base.descendants.each do |model|
-        next if model.abstract_class? || model != model.base_class
+        next if model.abstract_class? ? model.table_name.nil? : model != model.base_class
         next if model.name.nil? || model.name.include?("HABTM") # auto-generated join models
         next if model.primary_key || !model.table_exists?
 
