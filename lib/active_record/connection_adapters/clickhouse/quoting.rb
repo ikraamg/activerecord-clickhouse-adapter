@@ -8,6 +8,36 @@ module ActiveRecord
       module Quoting
         extend ActiveSupport::Concern
 
+        # disallow_raw_sql! vets order/pluck arguments against these; the abstract
+        # matchers reject backtick-quoted names — this adapter's own quoting style —
+        # so they admit `table`.`column` exactly as MySQL's do.
+        COLUMN_NAME_MATCHER = /
+          \A
+          (
+            (?:
+              # `table_name`.`column_name` | function(one or no argument)
+              ((?:\w+\.|`\w+`\.)?(?:\w+|`\w+`) | \w+\((?:|\g<2>)\))
+            )
+            (?:(?:\s+AS)?\s+(?:\w+|`\w+`))?
+          )
+          (?:\s*,\s*\g<1>)*
+          \z
+        /ix
+
+        COLUMN_NAME_WITH_ORDER_MATCHER = /
+          \A
+          (
+            (?:
+              # `table_name`.`column_name` | function(one or no argument)
+              ((?:\w+\.|`\w+`\.)?(?:\w+|`\w+`) | \w+\((?:|\g<2>)\))
+            )
+            (?:\s+ASC|\s+DESC)?
+            (?:\s+NULLS\s+(?:FIRST|LAST))?
+          )
+          (?:\s*,\s*\g<1>)*
+          \z
+        /ix
+
         class_methods do
           def quote_column_name(name)
             "`#{name.to_s.gsub("`", "``")}`"
@@ -16,6 +46,10 @@ module ActiveRecord
           def quote_table_name(name)
             name.to_s.split(".").map { |part| quote_column_name(part) }.join(".")
           end
+
+          def column_name_matcher = COLUMN_NAME_MATCHER
+
+          def column_name_with_order_matcher = COLUMN_NAME_WITH_ORDER_MATCHER
         end
 
         def quote_string(string)

@@ -55,6 +55,25 @@ RSpec.describe "ClickHouse quoting" do
     end
   end
 
+  # disallow_raw_sql! vets order/pluck arguments against these matchers; the abstract
+  # ones only admit bare or dot-qualified words, so backtick-quoted names — this
+  # adapter's own quote_column_name output — would raise UnknownAttributeReference.
+  describe "identifier matchers admit backtick-quoted names" do
+    subject(:adapter_class) { ActiveRecord::ConnectionAdapters::ClickHouseAdapter }
+
+    it "accepts a backtick-quoted qualified column" do
+      expect(adapter_class.column_name_matcher).to match("`comments`.`id`")
+    end
+
+    it "accepts a backtick-quoted column with direction" do
+      expect(adapter_class.column_name_with_order_matcher).to match("`comments`.`id` DESC")
+    end
+
+    it "still rejects raw SQL smuggled alongside a column" do
+      expect(adapter_class.column_name_with_order_matcher).not_to match("id; DROP TABLE users")
+    end
+  end
+
   it "round-trips a quoted injection payload via SELECT" do
     sql = "SELECT #{connection.quote("'; DROP TABLE users; --")}"
     expect(connection.select_value(sql)).to eq("'; DROP TABLE users; --")
