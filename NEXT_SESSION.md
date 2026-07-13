@@ -1,64 +1,62 @@
-# Iteration 18: basics_test corpus (the last big compat suite)
+# Iteration 19: has_one/habtm corpora, or window functions
 
-> Status at handoff: 420 rspec examples green (plus the rails-compat harness: 1,619
-> upstream minitest runs, 0 failures, skips all manifest-documented), rubocop clean. Iteration 17 was the
-> Phase 9 proving ground: TRMNL core runs on this adapter in the
-> `~/Documents/GitHub/core.worktrees/adapter-port` worktree — all 10 sink migrations
-> verbatim, every ClickHouse-touching core spec green under
-> `CLICKHOUSE_PROOF_REQUIRED=true`, zero query rewrites needed. The port forced three
-> adapter fixes (ledger #39–#41): `insert_all` duplicate-skip is now vacuously
-> satisfied, trailing sqlcommenter comments are hoisted on INSERT, and the gemspec no
-> longer touches the ActiveRecord namespace (path-gem consumers used to crash at boot).
+> Status at handoff: 429 rspec examples green plus the rails-compat harness at
+> **1,805 upstream runs, 0 failures, 142 skips** (all manifest-documented or
+> capability self-skips), rubocop clean. Iteration 18 shipped release readiness
+> (CI matrix, ankane README, CHANGELOG, gemspec metadata, `gem build` verified —
+> the 0.1.0 tag itself is Ikraam's call) and the `basics_test` corpus (180 runs,
+> 9 manifest skips), which forced one adapter fix: DateTime reads now follow
+> `ActiveRecord.default_timezone` for representation (ledger #42).
 
 ## Scope
 
-**`basics_test` corpus.** The one big upstream suite still unvendored (~1,500 runs
-upstream); it exercises attribute semantics, column aliasing, serialization, and
-pk edge cases end to end. Expect the largest skip triage yet — reuse the skips.yml
-anchors (query-count tallies, no-unique-constraint, no-rollback, cpk-prefetch,
-create_table-needs-order) before inventing new wording. Models/fixtures overlap
-heavily with what relations/associations already vendored, so the marginal slice
-cost should be moderate.
+Pick one (value order):
 
-If `basics_test` lands early, candidates in value order: `has_one` +
-`habtm` association suites (small marginal cost now), or window-function relation
-sugar (the last big OLAP deferral).
-
-**Core-port follow-ups (from Iteration 17):** the port worktree holds the
-uncommitted core-side edits (Gemfile swap, `connection_pool.migration_context` in
-`lib/tasks/clickhouse.rake`, `ssl_verify: false` on the prod sink config) — Ikraam
-decides if/when that becomes a core PR. The `ssl_verify: false` escape hatch itself
-landed here with live self-signed-TLS specs (compose serves HTTPS on 18443).
+1. **`has_one` + `habtm` association suites.** The marginal-cost argument from
+   Iteration 16 still holds: most models/fixtures are already vendored, and the
+   skip families are established (query-count tallies, no-rollback, cpk-prefetch,
+   anonymous-model pk). Expect a small slice delta.
+2. **Window-function relation sugar.** The last big OLAP deferral: `OVER
+   (PARTITION BY ... ORDER BY ...)` through a relation method in the
+   `Querying` concern style (RelationMethods + dialect compilation), plus
+   ClickHouse's non-standard window frames if cheap.
+3. **0.1.0 release mechanics** if Ikraam green-lights: tag, push, `gem push`
+   (needs credentials — stop and ask).
 
 ## Watch out for (carried forward + new)
 
-- `insert_all` no longer raises — duplicate rows insert cleanly (ledger #39). Any
-  spec that asserted the old ArgumentError is already updated; don't reintroduce it.
-- ClickHouse rejects trailing `/*...*/` after `INSERT ... VALUES` (code 27);
-  `hoist_trailing_comments` moves them to the front of INSERTs only (ledger #40).
-- Never `require_relative` the version file from the gemspec (ledger #41) — the
-  namespace-isolation spec guards this.
+- CI is untested against real GitHub Actions — the first push will tell. The edge
+  job resolves Rails from the rails/rails monorepo (Gemfile git block) because CI
+  has no ../rails-main worktree; BUNDLE_FROZEN=false is set for re-resolution.
+- The harness now registers arunit/arunit2 named configurations (both point at the
+  one test server) and runs with `raise_on_assign_to_attr_readonly = true` and
+  `belongs_to_required_validates_foreign_key = false`, matching upstream's
+  global_config. New suites may rely on more of that file — port flags as needed.
+- Harness pk assignment now also covers abstract classes that pin a table
+  (LoosePerson); models created inside test bodies still can't get one
+  (anonymous_model_primary_key skip family).
+- DateTime reads: representation follows `default_timezone` (ledger #42); writes
+  still always encode UTC (ledger #23). Don't "fix" one by breaking the other.
 - The read wire is RowBinary. Any new server type shows up as
   `RowBinary::Undecodable` → silent JSON fallback per query.
-- `insert_stream` takes column names from the first row; rows with differing key
-  sets silently insert defaults for the missing columns.
-- The slice cannot carry a column named like its own table (UNSUPPORTED_METHOD, §2);
-  `comments.comments` stays out.
+- The slice cannot carry a column named like its own table (UNSUPPORTED_METHOD,
+  §2); `comments.comments` stays out. `weirds` proves `$`/unicode/reserved-word
+  column names are fine.
 - A FROM alias equal to a real table name shadows that table in later JOINs
   (UNKNOWN_IDENTIFIER, §2) — alias-tracker tests get manifest skips.
 - Rails' prefetch seam cannot populate one column of a composite primary key —
   cpk models whose slice table has a single-column sorting key hit
   `next_sequence_value(nil)`; skip, don't special-case.
-- Mutation affected-row counts are a pre-mutation `SELECT count()` (decision #24)
-  that follows the ORDER/LIMIT subquery rewrite (ledger #36); raw-SQL
-  mutations still return 0.
 - Sorting-key columns are immutable (CANNOT_UPDATE_COLUMN, code 420); no
   correlated subqueries in mutation SETs (UNKNOWN_IDENTIFIER, code 47).
 - Remaining OLAP deferrals: window functions, dictionaries/dictGet, ON CLUSTER
   DDL, projections in schema.rb (structure.sql carries them today).
+- Core-port follow-ups: the `~/Documents/GitHub/core.worktrees/adapter-port`
+  worktree holds the uncommitted core-side edits — Ikraam decides if/when that
+  becomes a core PR.
 
 ## Definition of done
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 19.
+read/write path was touched, this file rewritten for Iteration 20.

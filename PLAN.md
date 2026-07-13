@@ -69,6 +69,7 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | `connection.migration_context` is gone in AR 8.1 — it lives on `connection_pool.migration_context` (TRMNL core's rake task assumed the old seam) | Iteration 17 live |
 | clickhouse-activerecord's `schema_migrations` state is not interoperable: it records versions in a ReplacingMergeTree with `active` flags, so a sink it migrated reports missing versions to this adapter — factory-reset before switching | Iteration 17 live |
 | `ssl: true` verifies certificates (Net::HTTP default); `ssl_verify: false` is the escape hatch for self-signed sinks — proven against the compose file's HTTPS listener (18443, self-signed cert in spec/support/tls) | Iteration 17 live |
+| Backtick-quoted identifiers accept `$`, unicode (`なまえ`) and reserved words (`from`) as column names — DDL, INSERT and SELECT all round-trip them | Iteration 18 probe |
 | `find_each(cursor: [...])` (Rails 8.1) batches pk-less tables over explicit ORDER BY columns | Iteration 4 live |
 | Clause grammar: `FROM t [FINAL] [SAMPLE f] PREWHERE ... WHERE ... ORDER BY ... LIMIT n BY cols LIMIT m SETTINGS ...` — `LIMIT m` before `LIMIT n BY` is a syntax error | Iteration 5 live |
 | `FINAL` on a non-replacing MergeTree raises code 181; `SAMPLE` without `SAMPLE BY` in DDL raises code 141 | Iteration 5 probe |
@@ -439,6 +440,13 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     `ActiveRecord::ConnectionAdapters::ClickHouse::VERSION` that early created the
     `ActiveRecord` module ahead of active_record.rb and silently disabled its autoloads.
 
+42. **DateTime reads follow `default_timezone` for representation only** *(Iteration 18)*:
+    DateTime64 stores an epoch, so the instant is zone-free; under
+    `ActiveRecord.default_timezone = :local` both wire paths now hand back local-zoned
+    Time instances (`Time.at` local / `getlocal`) instead of UTC-zoned ones, matching
+    every built-in adapter. Writes are untouched — `quoted_date` still always encodes
+    UTC (ledger #23), so the stored instant never shifts.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -664,9 +672,24 @@ log, admin dashboards, logs-tab feature specs — ~250 examples, 0 failures). Ze
 query changes needed; the only core-side edits were the Gemfile, one rake-task
 seam (`connection.migration_context` → `connection_pool.migration_context`), and
 `ssl_verify: false` on the prod sink config (its cert is self-signed; the incumbent
-never verified). Fixes it forced here: ledger #39–#41 plus the TLS escape hatch. Still open for release: README (ankane style),
-CHANGELOG, CI matrix (Ruby 3.2/3.4/4.0 × AR 8.1/edge × ClickHouse 25.8 LTS/latest),
-0.1.0 gem release.
+never verified). Fixes it forced here: ledger #39–#41 plus the TLS escape hatch.
+
+Release readiness *(landed — Iteration 18)*: GitHub Actions CI (Ruby 3.2/3.4/4.0 on
+released AR 8.1, plus ClickHouse-latest and Rails-edge probes; every job boots the real
+compose server — the Gemfile falls back to the rails/rails monorepo when the local edge
+worktree is absent), ankane-style README covering the full config/query surface,
+CHANGELOG seeded for 0.1.0, gemspec metadata, `gem build` verified. Still open: the
+0.1.0 tag/push itself (Ikraam's call).
+
+**Phase 6 (cont.) — basics_test corpus.** *(landed — Iteration 18)*
+Vendored `base_test.rb` byte-exact (+5 models, +1 fixture set, +7 slice tables incl.
+`weirds` with `a$b`/`なまえ`/`from` columns). Helper gained upstream's arunit/arunit2
+named configurations and two global-config flags (`raise_on_assign_to_attr_readonly`,
+`belongs_to_required_validates_foreign_key = false`); pk assignment now reaches
+abstract classes that pin a table (LoosePerson). One adapter gap surfaced and fixed
+TDD: local-timezone read representation (ledger #42). Harness: **1,805 runs,
+0 failures, 142 skips** (all manifest-documented or capability self-skips). Suite:
+429 examples green.
 
 ## 7. Spec strategy (three tiers)
 
