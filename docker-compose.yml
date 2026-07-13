@@ -6,7 +6,7 @@
 # Host ports are offset (18123/19000) so the core repo's spike (8123) and sandbox (8124+) never collide.
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:25.8
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.8} # CI matrix overrides; 25.8 = LTS default
     container_name: activerecord-clickhouse-test
     environment:
       CLICKHOUSE_DB: ar_clickhouse_test

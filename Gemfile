@@ -4,9 +4,20 @@ source "https://rubygems.org"
 
 gemspec
 
-# RAILS_SOURCE=edge runs the suite against the local rails-main worktree
-# (kept fresh via `git -C ../rails fetch origin main`); default is the released gem.
-gem "activerecord", path: "../rails-main/activerecord" if ENV["RAILS_SOURCE"] == "edge"
+# RAILS_SOURCE=edge runs the suite against Rails main: the local rails-main worktree
+# when present (kept fresh via `git -C ../rails-main fetch origin main`), the GitHub
+# monorepo otherwise (CI). Default is the released gem.
+if ENV["RAILS_SOURCE"] == "edge"
+  if Dir.exist?(File.expand_path("../rails-main/activerecord", __dir__))
+    gem "activerecord", path: "../rails-main/activerecord"
+  else
+    git "https://github.com/rails/rails.git", branch: "main" do
+      gem "activemodel"
+      gem "activerecord" # rubocop:disable Bundler/DuplicatedGem -- edge branches are mutually exclusive
+      gem "activesupport"
+    end
+  end
+end
 
 group :development, :test do
   gem "benchmark-ips"
