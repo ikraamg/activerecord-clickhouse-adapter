@@ -4,6 +4,8 @@ RSpec.describe "ClickHouse CRUD semantics" do
   subject(:model) do
     Class.new(ActiveRecord::Base) do
       self.table_name = "crud_probe"
+      # Ordered/limited mutations compile to WHERE pk IN (subquery), which needs a key.
+      self.primary_key = "device_id"
 
       def self.name = "CrudProbe"
     end
@@ -88,6 +90,42 @@ RSpec.describe "ClickHouse CRUD semantics" do
       expect(model.delete_all).to eq(3)
     end
 
+    # Association scopes routinely carry an order (`has_many ..., -> { order "id" }`);
+    # the visitor rewrites the mutation into WHERE key IN (subquery), and the count
+    # must survive that rewrite instead of reporting zero.
+    it "returns the number of deleted rows for an ordered relation" do
+      expect(model.where(device_id: [1, 2]).order(:device_id).delete_all).to eq(2)
+    end
+
+    it "returns the capped count for a limited delete" do
+      expect(model.order(:device_id).limit(2).delete_all).to eq(2)
+    end
+
+    it "deletes only the limited slice" do
+      model.order(:device_id).limit(2).delete_all
+      expect(model.pluck(:device_id)).to eq([3])
+    end
+
+    # A joined delete_all compiles to WHERE pk IN (SELECT ... INNER JOIN ... ON a.x = b.y);
+    # bare-name rewriting must stop at the subquery boundary or the ON clause turns
+    # ambiguous (AMBIGUOUS_COLUMN_NAME, code 352).
+    it "keeps qualified column names inside the subquery of a joined delete" do
+      conn = ActiveRecord::Base.lease_connection
+      conn.drop_table("crud_probe_events", if_exists: true)
+      conn.create_table("crud_probe_events", order: "device_id") do |t|
+        t.integer :device_id, limit: 8
+      end
+      conn.execute("INSERT INTO crud_probe_events VALUES (2)")
+
+      model.has_many :crud_probe_events, foreign_key: :device_id, primary_key: :device_id,
+                                         class_name: "CrudProbeEvent"
+      stub_const("CrudProbeEvent", Class.new(ActiveRecord::Base) { self.table_name = "crud_probe_events" })
+
+      expect(model.joins(:crud_probe_events).delete_all).to eq(1)
+    ensure
+      ActiveRecord::Base.lease_connection.drop_table("crud_probe_events", if_exists: true)
+    end
+
     # Ported from ../clickhouse/tests/queries/0_stateless/02319_lightweight_delete_on_merge_tree.sql
     it "deletes across a 100-row part by equality then IN-list, matching the upstream oracle" do
       model.delete_all
@@ -124,6 +162,10 @@ RSpec.describe "ClickHouse CRUD semantics" do
 
     it "returns the full count for an unscoped update" do
       expect(model.update_all(status: "swept")).to eq(2)
+    end
+
+    it "returns the number of matching rows for an ordered relation" do
+      expect(model.order(:device_id).update_all(status: "swept")).to eq(2)
     end
   end
 end

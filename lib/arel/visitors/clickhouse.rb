@@ -146,6 +146,21 @@ module Arel
         collector << quote_column_name(o.name)
       end
 
+      # Only the mutation's own WHERE needs bare names; a nested SELECT (the
+      # WHERE key IN (subquery) rewrite for ordered/limited/joined mutations) is a
+      # regular query where stripping qualifiers makes JOIN columns ambiguous
+      # (AMBIGUOUS_COLUMN_NAME, code 352).
+      def visit_Arel_Nodes_SelectStatement(o, collector)
+        return super unless @unqualify_columns
+
+        @unqualify_columns = false
+        begin
+          super
+        ensure
+          @unqualify_columns = true
+        end
+      end
+
       def unqualifying_columns
         @unqualify_columns = true
         yield

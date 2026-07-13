@@ -145,22 +145,29 @@ module ActiveRecord
 
         private
 
-        # nil for raw-SQL mutations and for statements carrying LIMIT/ORDER (the visitor
-        # rewrites those into subqueries the count cannot mirror cheaply); callers then
-        # fall back to the server's report of zero.
+        # nil for raw-SQL mutations; callers then fall back to the server's report of
+        # zero. ORDER alone never changes how many rows match, and a LIMIT caps the
+        # count through a subquery — SELECT count() FROM (matching rows LIMIT n).
         def mutation_target_count(arel, name)
           ast = arel.respond_to?(:ast) ? arel.ast : arel
           return nil unless countable_mutation?(ast)
 
-          select = Arel::SelectManager.new(ast.relation)
-          select.project(Arel.star.count)
-          ast.wheres.each { |where| select.where(where) }
-          select_value(select, "#{name} Count").to_i
+          select_value(mutation_target_count_select(ast), "#{name} Count").to_i
+        end
+
+        def mutation_target_count_select(ast)
+          matching = Arel::SelectManager.new(ast.relation)
+          ast.wheres.each { |where| matching.where(where) }
+          ast.limit.nil? ? matching.project(Arel.star.count) : capped_count_select(matching, ast.limit)
+        end
+
+        def capped_count_select(matching, limit)
+          capped = matching.project(Arel.sql("1")).take(limit.expr).as("mutation_target")
+          Arel::SelectManager.new(capped).project(Arel.star.count)
         end
 
         def countable_mutation?(ast)
-          (ast.is_a?(Arel::Nodes::UpdateStatement) || ast.is_a?(Arel::Nodes::DeleteStatement)) &&
-            ast.limit.nil? && ast.orders.empty?
+          ast.is_a?(Arel::Nodes::UpdateStatement) || ast.is_a?(Arel::Nodes::DeleteStatement)
         end
 
         GENERATABLE_ID_TYPES = /\A(?:U?Int(?:64|128|256)|UUID)\z/
