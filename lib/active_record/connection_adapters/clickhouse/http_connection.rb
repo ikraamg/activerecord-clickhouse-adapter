@@ -93,6 +93,11 @@ module ActiveRecord
         end
 
         def query_params(params)
+          session_settings.merge(async_insert_params)
+                          .merge(params.transform_keys { |key| "param_#{key}" }).compact
+        end
+
+        def session_settings
           {
             database: @config[:database],
             default_format: SELECT_FORMAT,
@@ -108,7 +113,16 @@ module ActiveRecord
             # Server gzips responses ~3.6x smaller; Net::HTTP decompresses transparently
             # (it sends Accept-Encoding: gzip by default). Probed 2026-07-12, PLAN.md §2.
             enable_http_compression: @config.fetch(:compression, true) ? 1 : 0
-          }.merge(params.transform_keys { |key| "param_#{key}" }).compact
+          }
+        end
+
+        # Server-side batching for high-frequency small INSERTs. wait_for_async_insert
+        # defaults to 1 so an acked insert is durable; 0 (fire-and-forget) is an
+        # explicit opt-in because it loses acked rows on a server crash.
+        def async_insert_params
+          return {} unless @config[:async_insert]
+
+          { async_insert: 1, wait_for_async_insert: @config.fetch(:wait_for_async_insert, 1) }
         end
 
         def raise_execution_error(response)
