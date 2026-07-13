@@ -243,12 +243,27 @@ module ActiveRecord
           if raw_result.columns.empty?
             ActiveRecord::Result.empty(affected_rows: raw_result.written_rows)
           else
-            casters = raw_result.types.map { |type_string| Types.caster_for(type_string) }
-            rows = raw_result.rows.map do |row|
-              row.each_with_index.map { |value, index| casters.fetch(index).cast(value) }
-            end
-            ActiveRecord::Result.new(raw_result.columns, rows)
+            ActiveRecord::Result.new(bare_column_names(raw_result.columns), cast_rows(raw_result))
           end
+        end
+
+        def cast_rows(raw_result)
+          casters = raw_result.types.map { |type_string| Types.caster_for(type_string) }
+          raw_result.rows.map do |row|
+            row.each_with_index.map { |value, index| casters.fetch(index).cast(value) }
+          end
+        end
+
+        # With 2+ JOINs the analyzer renames a qualified star's colliding columns to
+        # "table.column" on the wire (probed 2026-07-13, PLAN.md §2); Rails maps
+        # attributes by bare name, so the qualifier goes wherever stripping it leaves
+        # the name unambiguous.
+        def bare_column_names(columns)
+          return columns if columns.none? { |name| name.include?(".") }
+
+          stripped = columns.map { |name| name.rpartition(".").last }
+          collisions = stripped.tally
+          columns.zip(stripped).map { |original, bare| collisions[bare] == 1 ? bare : original }
         end
 
         def affected_rows(raw_result) = raw_result.written_rows
