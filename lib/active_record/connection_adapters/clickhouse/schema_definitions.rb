@@ -4,16 +4,31 @@ module ActiveRecord
   module ConnectionAdapters
     module ClickHouse
       class TableDefinition < ConnectionAdapters::TableDefinition
-        attr_reader :engine, :order, :partition, :ttl, :table_settings
+        attr_reader :engine, :order, :partition, :ttl, :table_settings, :primary_key_clause, :sample
 
         def initialize(conn, name, engine: "MergeTree", order: nil, partition: nil, ttl: nil,
-                       settings: nil, **)
+                       settings: nil, primary_key_clause: nil, sample: nil, **)
           @engine = engine
           @order = order
           @partition = partition
           @ttl = ttl
           @table_settings = settings
+          @primary_key_clause = primary_key_clause
+          @sample = sample
           super(conn, name, **)
+        end
+      end
+
+      # Carries the ClickHouse-only column metadata the dumper needs: compression codec
+      # and MATERIALIZED/ALIAS server-computed expressions.
+      class Column < ConnectionAdapters::Column
+        attr_reader :codec, :computed_kind, :computed_expression
+
+        def initialize(*, codec: nil, computed_kind: nil, computed_expression: nil, **)
+          @codec = codec
+          @computed_kind = computed_kind
+          @computed_expression = computed_expression
+          super(*, **)
         end
       end
 
@@ -60,12 +75,25 @@ module ActiveRecord
             "TYPE #{type} GRANULARITY #{options.fetch(:granularity, 1)}"
         end
 
+        # DEFAULT / MATERIALIZED / ALIAS are mutually exclusive ways for a column to get
+        # its value; CODEC composes with any of them.
         def add_column_options!(sql, options)
+          sql << column_value_clause(options).to_s
+          sql << " CODEC(#{options[:codec]})" if options[:codec]
+          sql
+        end
+
+        def column_value_clause(options)
+          clauses = []
           if options_include_default?(options)
             default = options[:default]
-            sql << " DEFAULT #{default.is_a?(Proc) ? default.call : @conn.quote(default)}"
+            clauses << " DEFAULT #{default.is_a?(Proc) ? default.call : @conn.quote(default)}"
           end
-          sql
+          clauses << " MATERIALIZED #{options[:materialized]}" if options[:materialized]
+          clauses << " ALIAS #{options[:alias]}" if options[:alias]
+          raise ArgumentError, "materialized:, alias: and default: are mutually exclusive" if clauses.many?
+
+          clauses.first
         end
 
         def add_table_options!(create_sql, o)
@@ -74,11 +102,19 @@ module ActiveRecord
           end
 
           create_sql << " ENGINE = #{o.engine}"
-          create_sql << " PARTITION BY #{o.partition}" if o.partition
-          create_sql << " ORDER BY #{o.order}" if o.order
-          create_sql << " TTL #{o.ttl}" if o.ttl
-          create_sql << " SETTINGS #{format_settings(o.table_settings)}" if o.table_settings.present?
+          table_clauses(o).each { |keyword, expression| create_sql << " #{keyword} #{expression}" if expression }
           create_sql
+        end
+
+        def table_clauses(o)
+          {
+            "PARTITION BY" => o.partition,
+            "PRIMARY KEY" => o.primary_key_clause,
+            "ORDER BY" => o.order,
+            "SAMPLE BY" => o.sample,
+            "TTL" => o.ttl,
+            "SETTINGS" => o.table_settings.present? ? format_settings(o.table_settings) : nil
+          }
         end
 
         def format_settings(settings)

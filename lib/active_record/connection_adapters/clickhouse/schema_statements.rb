@@ -11,6 +11,10 @@ module ActiveRecord
         def create_table(table_name, id: false, **options, &block)
           clear_generatable_primary_key_cache
           options = internal_table_options(table_name, options)
+          # With id: false Rails' own primary_key: kwarg is inert, so the DSL reuses the
+          # ClickHouse clause name; renamed here because super would swallow it. With an
+          # explicit id column the Rails meaning (pk column name) wins untouched.
+          options[:primary_key_clause] = options.delete(:primary_key) if id == false && options.key?(:primary_key)
           super
         end
 
@@ -66,6 +70,34 @@ module ActiveRecord
             ALTER TABLE #{quote_table_name(table_name)}
             MATERIALIZE PROJECTION #{quote_column_name(projection_name)}
           SQL
+        end
+
+        # Partition lifecycle: the OLAP replacement for bulk deletes and archival. All
+        # verbs take the partition_id string (see #partitions) — the ID form is a plain
+        # quoted literal, so arbitrary expressions never reach the ALTER.
+        def partitions(table_name)
+          select_values(<<~SQL.squish, "SCHEMA")
+            SELECT DISTINCT partition_id FROM system.parts
+            WHERE database = currentDatabase() AND table = #{quote(table_name.to_s)} AND active
+            ORDER BY partition_id
+          SQL
+        end
+
+        def detach_partition(table_name, partition_id)
+          alter_partition(table_name, "DETACH", partition_id)
+        end
+
+        def attach_partition(table_name, partition_id)
+          alter_partition(table_name, "ATTACH", partition_id)
+        end
+
+        def drop_partition(table_name, partition_id)
+          alter_partition(table_name, "DROP", partition_id)
+        end
+
+        # Hard-links the partition into shadow/<name> as an instant local backup.
+        def freeze_partition(table_name, partition_id, name: nil)
+          alter_partition(table_name, "FREEZE", partition_id, suffix: name && " WITH NAME #{quote(name)}")
         end
 
         # Forces an unscheduled merge; FINAL merges down to one part per partition —
@@ -132,11 +164,11 @@ module ActiveRecord
         end
 
         def valid_table_definition_options
-          super + %i[engine order partition ttl settings]
+          super + %i[engine order partition ttl settings primary_key_clause sample]
         end
 
         def valid_column_definition_options
-          super + [:low_cardinality]
+          super + %i[low_cardinality codec materialized alias]
         end
 
         # Rails' schema_migrations/ar_internal_metadata bookkeeping arrives via fixed
@@ -166,22 +198,21 @@ module ActiveRecord
         # our create_table DSL accepts — this is what the schema dumper emits.
         def table_options(table_name)
           row = select_one(<<~SQL.squish, "SCHEMA")
-            SELECT engine_full, sorting_key, partition_key FROM system.tables
+            SELECT engine_full, sorting_key, partition_key, primary_key, sampling_key
+            FROM system.tables
             WHERE database = currentDatabase() AND name = #{quote(table_name.to_s)}
           SQL
-          return {} unless row
-
-          clauses = parse_engine_full(row["engine_full"])
-          {
-            engine: clauses[:engine],
-            partition: row["partition_key"].presence,
-            order: format_sorting_key(row["sorting_key"]),
-            ttl: clauses[:ttl],
-            settings: dumpable_settings(clauses[:settings])
-          }.compact
+          row ? dumpable_table_options(row) : {}
         end
 
         private
+
+        def alter_partition(table_name, verb, partition_id, suffix: nil)
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}
+            #{verb} PARTITION ID #{quote(partition_id.to_s)}#{suffix}
+          SQL
+        end
 
         # DSL types like t.column :tags, "Array(String)" pass through verbatim once they
         # parse as a ClickHouse type; the server validates the family at DDL time.
@@ -204,6 +235,25 @@ module ActiveRecord
           engine, *clause_pairs = engine_full.to_s.split(ENGINE_FULL_CLAUSES)
           clauses = clause_pairs.each_slice(2).to_h { |keyword, expression| [keyword, expression] }
           { engine: engine.presence, ttl: clauses["TTL"], settings: clauses["SETTINGS"] }
+        end
+
+        def dumpable_table_options(row)
+          clauses = parse_engine_full(row["engine_full"])
+          {
+            engine: clauses[:engine],
+            partition: row["partition_key"].presence,
+            primary_key: dumpable_primary_key(row),
+            order: format_sorting_key(row["sorting_key"]),
+            sample: row["sampling_key"].presence,
+            ttl: clauses[:ttl],
+            settings: dumpable_settings(clauses[:settings])
+          }.compact
+        end
+
+        # The primary key defaults to the whole sorting key; only a narrower one is a
+        # real PRIMARY KEY clause worth dumping.
+        def dumpable_primary_key(row)
+          format_sorting_key(row["primary_key"]) if row["primary_key"] != row["sorting_key"]
         end
 
         def format_sorting_key(sorting_key)
@@ -263,7 +313,7 @@ module ActiveRecord
 
         def column_definitions(table_name)
           select_all(<<~SQL.squish, "SCHEMA").to_a
-            SELECT name, type, default_kind, default_expression, comment
+            SELECT name, type, default_kind, default_expression, comment, compression_codec
             FROM system.columns
             WHERE database = currentDatabase() AND table = #{quote(table_name.to_s)}
             ORDER BY position
@@ -282,8 +332,17 @@ module ActiveRecord
             fetch_type_metadata(sql_type, cast_type),
             sql_type.start_with?("Nullable("),
             default_function,
-            comment: field["comment"].presence
+            comment: field["comment"].presence,
+            **clickhouse_column_extras(field)
           )
+        end
+
+        def clickhouse_column_extras(field)
+          {
+            codec: field["compression_codec"].delete_prefix("CODEC(").delete_suffix(")").presence,
+            computed_kind: field["default_kind"].presence_in(%w[MATERIALIZED ALIAS])&.downcase,
+            computed_expression: field["default_expression"].presence
+          }
         end
 
         def extract_default(field)

@@ -65,6 +65,13 @@ module ActiveRecord
           spec = super
           spec.delete(:null)
           spec[:null] = "true" if column.null
+          spec.merge!(clickhouse_column_options(column))
+        end
+
+        def clickhouse_column_options(column)
+          spec = {}
+          spec[column.computed_kind.to_sym] = column.computed_expression.inspect if column.computed_kind
+          spec[:codec] = column.codec.inspect if column.codec
           spec
         end
 
