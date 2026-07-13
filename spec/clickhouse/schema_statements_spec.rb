@@ -103,6 +103,76 @@ RSpec.describe "ClickHouse schema statements" do
     expect(connection.primary_keys("schema_probe")).to eq([])
   end
 
+  describe "projections" do
+    before(:all) do
+      conn = ActiveRecord::Base.lease_connection
+      conn.create_table("projection_probe", force: true, order: "id") do |t|
+        t.integer :id, limit: 8
+        t.integer :duration_ms, limit: 8
+      end
+    end
+
+    after(:all) do
+      ActiveRecord::Base.lease_connection.drop_table("projection_probe", if_exists: true)
+    end
+
+    def projection_names
+      connection.select_values(
+        "SELECT name FROM system.projections WHERE database = currentDatabase() AND table = 'projection_probe'"
+      )
+    end
+
+    it "adds a projection with an alternate sort order" do
+      connection.add_projection("projection_probe", "by_duration", order: "duration_ms")
+      expect(projection_names).to include("by_duration")
+    ensure
+      connection.drop_projection("projection_probe", "by_duration", if_exists: true)
+    end
+
+    it "materializes a projection over existing parts" do
+      connection.execute("INSERT INTO projection_probe VALUES (1, 10)")
+      connection.add_projection("projection_probe", "by_duration", order: "duration_ms")
+      expect { connection.materialize_projection("projection_probe", "by_duration") }.not_to raise_error
+    ensure
+      connection.drop_projection("projection_probe", "by_duration", if_exists: true)
+    end
+
+    it "drops a projection" do
+      connection.add_projection("projection_probe", "by_duration", order: "duration_ms")
+      connection.drop_projection("projection_probe", "by_duration")
+      expect(projection_names).to be_empty
+    end
+
+    it "projects an aggregation when given select" do
+      connection.add_projection("projection_probe", "totals", select: "sum(duration_ms)", group: "id")
+      expect(projection_names).to include("totals")
+    ensure
+      connection.drop_projection("projection_probe", "totals", if_exists: true)
+    end
+  end
+
+  describe "optimize_table" do
+    it "forces a merge without raising" do
+      connection.create_table("optimize_probe", force: true, order: "id") { |t| t.integer :id, limit: 8 }
+      connection.execute("INSERT INTO optimize_probe VALUES (1)")
+      expect { connection.optimize_table("optimize_probe") }.not_to raise_error
+    ensure
+      connection.drop_table("optimize_probe", if_exists: true)
+    end
+
+    it "deduplicates ReplacingMergeTree rows with final" do
+      connection.create_table("optimize_dedup", force: true, engine: "ReplacingMergeTree", order: "id") do |t|
+        t.integer :id, limit: 8
+      end
+      connection.execute("INSERT INTO optimize_dedup VALUES (1)")
+      connection.execute("INSERT INTO optimize_dedup VALUES (1)")
+      connection.optimize_table("optimize_dedup")
+      expect(connection.select_value("SELECT count() FROM optimize_dedup")).to eq(1)
+    ensure
+      connection.drop_table("optimize_dedup", if_exists: true)
+    end
+  end
+
   describe "change_column_default" do
     before(:all) do
       conn = ActiveRecord::Base.lease_connection

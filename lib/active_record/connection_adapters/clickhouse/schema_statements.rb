@@ -24,6 +24,57 @@ module ActiveRecord
           execute("RENAME TABLE #{quote_table_name(table_name)} TO #{quote_table_name(new_name)}")
         end
 
+        # The insert-trigger half of the OLAP ingest-raw/read-aggregated idiom. A TO
+        # target is required: inner-storage views hide data in an implicit table and
+        # POPULATE misses concurrent inserts, so neither is supported.
+        def create_materialized_view(view_name, to: nil, as: nil)
+          raise ArgumentError, "create_materialized_view requires to: (a target table)" if to.nil?
+          raise ArgumentError, "create_materialized_view requires as: (a SELECT)" if as.nil?
+
+          execute(<<~SQL.squish)
+            CREATE MATERIALIZED VIEW #{quote_table_name(view_name)}
+            TO #{quote_table_name(to)} AS #{as}
+          SQL
+        end
+
+        def drop_materialized_view(view_name, if_exists: false)
+          execute("DROP VIEW #{"IF EXISTS " if if_exists}#{quote_table_name(view_name)}")
+        end
+
+        # Projections are per-part alternate physical layouts (sort orders or
+        # pre-aggregations) the optimizer picks automatically; materialize_projection
+        # backfills parts written before the projection existed (async mutation).
+        def add_projection(table_name, projection_name, select: "*", order: nil, group: nil)
+          body = ["SELECT #{select}"]
+          body << "GROUP BY #{group}" if group
+          body << "ORDER BY #{order}" if order
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}
+            ADD PROJECTION #{quote_column_name(projection_name)} (#{body.join(" ")})
+          SQL
+        end
+
+        def drop_projection(table_name, projection_name, if_exists: false)
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}
+            DROP PROJECTION #{"IF EXISTS " if if_exists}#{quote_column_name(projection_name)}
+          SQL
+        end
+
+        def materialize_projection(table_name, projection_name)
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}
+            MATERIALIZE PROJECTION #{quote_column_name(projection_name)}
+          SQL
+        end
+
+        # Forces an unscheduled merge; FINAL merges down to one part per partition —
+        # the maintenance verb that makes ReplacingMergeTree deduplication actually
+        # happen instead of eventually.
+        def optimize_table(table_name, final: true)
+          execute("OPTIMIZE TABLE #{quote_table_name(table_name)}#{" FINAL" if final}")
+        end
+
         # MODIFY COLUMN accepts DEFAULT without restating the type; REMOVE DEFAULT
         # drops it (probed 2026-07-13).
         def change_column_default(table_name, column_name, default_or_changes)

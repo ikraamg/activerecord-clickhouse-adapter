@@ -10,6 +10,44 @@ module ActiveRecord
       class SchemaDumper < ConnectionAdapters::SchemaDumper
         private
 
+        # Materialized views dump after every table so their TO targets exist on load.
+        def tables(stream)
+          super
+          materialized_views(stream)
+        end
+
+        MATERIALIZED_VIEW_SQL = <<~SQL.squish
+          SELECT name, as_select, create_table_query FROM system.tables
+          WHERE database = currentDatabase() AND engine = 'MaterializedView'
+          ORDER BY name
+        SQL
+        private_constant :MATERIALIZED_VIEW_SQL
+
+        def materialized_views(stream)
+          @connection.select_all(MATERIALIZED_VIEW_SQL, "SCHEMA").each_with_index do |view, index|
+            stream.puts if index.zero?
+            stream.puts materialized_view_statement(view)
+          end
+        end
+
+        # The server database-qualifies every identifier it stores; strip the current
+        # database so the dump loads into any target database.
+        def materialized_view_statement(view)
+          target = view["create_table_query"][/\bTO\s+(\S+)/, 1]
+          select = strip_database_qualifier(view["as_select"])
+          "  create_materialized_view #{view["name"].inspect}, " \
+            "to: #{strip_database_qualifier(target).inspect}, as: #{select.inspect}"
+        end
+
+        def strip_database_qualifier(sql)
+          database = Regexp.escape(current_database)
+          sql.gsub(/(?:`#{database}`|#{database})\./, "")
+        end
+
+        def current_database
+          @current_database ||= @connection.select_value("SELECT currentDatabase()", "SCHEMA")
+        end
+
         def column_spec(column)
           inner_type, wrappers = unwrap_column_type(column.sql_type)
           type = schema_type(column)
