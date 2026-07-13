@@ -89,6 +89,16 @@ RSpec.describe "ClickHouse schema statements" do
     expect(index.name).to eq("idx_note")
   end
 
+  it "renames a table keeping its rows" do
+    connection.create_table("rename_probe", force: true, order: "id") { |t| t.integer :id, limit: 8 }
+    connection.execute("INSERT INTO rename_probe VALUES (7)")
+    connection.rename_table("rename_probe", "renamed_probe")
+    expect(connection.select_value("SELECT id FROM renamed_probe")).to eq(7)
+  ensure
+    connection.drop_table("rename_probe", if_exists: true)
+    connection.drop_table("renamed_probe", if_exists: true)
+  end
+
   it "reports no Active Record primary key (ClickHouse sorting keys are not unique)" do
     expect(connection.primary_keys("schema_probe")).to eq([])
   end

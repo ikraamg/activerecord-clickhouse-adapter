@@ -13,6 +13,10 @@ module ActiveRecord
           super
         end
 
+        def rename_table(table_name, new_name, **)
+          execute("RENAME TABLE #{quote_table_name(table_name)} TO #{quote_table_name(new_name)}")
+        end
+
         def tables
           select_values(data_source_sql(type: "BASE TABLE"), "SCHEMA")
         end
