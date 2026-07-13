@@ -63,7 +63,11 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | TRMNL corpus needs `inflect.acronym "TTL"` (app inflection) for `ReduceLogsTTLToFourteenDays` to resolve | Iteration 3 live |
 | Bare `DELETE FROM t` / `ALTER TABLE t UPDATE ...` without WHERE are syntax errors (code 62) — the visitor appends `WHERE 1` when unscoped | Iteration 4 live |
 | `mutations_sync=1` as a per-request HTTP param makes mutations block until applied | Iteration 4 live |
-| Rails `insert_all` implies duplicate-skip and correctly raises with `supports_insert_on_duplicate_skip? = false`; `insert_all!` is the plain-INSERT path | Iteration 4 live |
+| Rails `insert_all` implies duplicate-skip; with no unique constraints the skip is vacuous, so `supports_insert_on_duplicate_skip? = true` emits a plain INSERT (revised from Iteration 4's `false` while porting TRMNL core — ledger #39) | Iteration 17 live |
+| ClickHouse rejects trailing `/*...*/` comments after `INSERT ... VALUES` (code 27, ValuesBlockInputFormat parses the tail); leading comments are fine — Rails QueryLogs' sqlcommenter tags must be hoisted | Iteration 17 live |
+| Bundler evaluates a path/git gem's gemspec at `bundler/setup` time; a gemspec `require_relative` that defines any `ActiveRecord` constant clobbers active_record.rb's `autoload :ConnectionAdapters` and breaks every later adapter require | Iteration 17 live |
+| `connection.migration_context` is gone in AR 8.1 — it lives on `connection_pool.migration_context` (TRMNL core's rake task assumed the old seam) | Iteration 17 live |
+| clickhouse-activerecord's `schema_migrations` state is not interoperable: it records versions in a ReplacingMergeTree with `active` flags, so a sink it migrated reports missing versions to this adapter — factory-reset before switching | Iteration 17 live |
 | `find_each(cursor: [...])` (Rails 8.1) batches pk-less tables over explicit ORDER BY columns | Iteration 4 live |
 | Clause grammar: `FROM t [FINAL] [SAMPLE f] PREWHERE ... WHERE ... ORDER BY ... LIMIT n BY cols LIMIT m SETTINGS ...` — `LIMIT m` before `LIMIT n BY` is a syntax error | Iteration 5 live |
 | `FINAL` on a non-replacing MergeTree raises code 181; `SAMPLE` without `SAMPLE BY` in DDL raises code 141 | Iteration 5 probe |
@@ -229,8 +233,9 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
    predicates gets a deliberate value with a comment; notable trues: `supports_explain?`,
    `supports_views?`, `supports_materialized_views?`, `supports_datetime_with_precision?`,
    `supports_json?`, `supports_comments?`, `supports_virtual_columns?` (MATERIALIZED/ALIAS),
-   `supports_common_table_expressions?`, `supports_insert_on_duplicate_skip?` (false! —
-   prior art returns true with no upsert semantics behind it), `supports_concurrent_connections?`.
+   `supports_common_table_expressions?`, `supports_insert_on_duplicate_skip?` (true —
+   vacuously: no unique constraints means nothing can conflict, see ledger #39),
+   `supports_concurrent_connections?`.
 5. **Mutations.** `delete` / `delete_all` → lightweight `DELETE FROM` (verified on 25.8);
    `update` / `update_all` → `ALTER TABLE ... UPDATE` mutation by default, automatic
    lightweight `UPDATE` when the server/table supports it. `mutations_sync` exposed as an
@@ -410,6 +415,28 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     batch in memory at a time, 4.8x faster than `insert_all!` on the 1k-row
     baseline. Times/dates/decimals encode via `quoted_date`/`to_s("F")`; the
     server casts everything else from JSON.
+
+39. **insert_all's duplicate-skip is vacuously satisfied** *(Iteration 17)*: Iteration 4
+    made `insert_all` raise (`supports_insert_on_duplicate_skip? = false`) to avoid
+    prior art's lie of claiming conflict handling that doesn't exist. Porting TRMNL core
+    showed the raise punishes the common OLAP write path: its telemetry sink writes
+    exclusively through `insert_all`. Reversed: with no unique constraints nothing can
+    conflict, so skip-duplicates holds vacuously and a plain INSERT is emitted.
+    `upsert_all` (update semantics) still raises with a pointer at
+    Replacing/SummingMergeTree engines.
+
+40. **Trailing sqlcommenter comments are hoisted on INSERT** *(Iteration 17)*: Rails
+    QueryLogs appends `/*tags*/` after the statement; ClickHouse parses everything after
+    `VALUES` with the Values input format and rejects a trailing comment (code 27).
+    `perform_query` moves a comment-shaped tail to the front of INSERT statements only —
+    SELECTs keep theirs, string literals that merely contain `/*` are untouched (the
+    regex must match from a real `/*` to end-of-string).
+
+41. **The gemspec never touches the runtime namespace** *(Iteration 17)*: the version is
+    a literal in the gemspec, asserted in sync with `ClickHouse::VERSION` by spec.
+    Bundler evaluates gemspecs of path/git-sourced gems before Rails loads; defining
+    `ActiveRecord::ConnectionAdapters::ClickHouse::VERSION` that early created the
+    `ActiveRecord` module ahead of active_record.rb and silently disabled its autoloads.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -623,11 +650,19 @@ Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, mult
 round-robin with health-aware failover, TLS verification ON by default, read-only user
 support (`prevent_writes` integration).
 
-**Phase 9 — Real-world integration + release.**
-Swap TRMNL core's telemetry sink (`AnalyticsRecord`, `docker-compose.clickhouse.yml`,
-`db/migrate_clickhouse`) onto this adapter behind a branch; run its telemetry specs and the
-prod-like docker sandbox e2e. README (ankane style), CHANGELOG, CI matrix
-(Ruby 3.2/3.4/4.0 × AR 8.1/edge × ClickHouse 25.8 LTS/latest), 0.1.0 gem release.
+**Phase 9 — Real-world integration + release.** *(integration proven — Iteration 17)*
+TRMNL core ported on the `clickhouse-adapter-port` worktree
+(`~/Documents/GitHub/core.worktrees/adapter-port`): Gemfile swapped from
+`clickhouse-activerecord 1.6.7` to this gem (path source), all 10
+`db/migrate_clickhouse` migrations ran verbatim, `clickhouse:record_deploy` and the
+Telemetry write/read paths work live, and every ClickHouse-touching core spec passes
+with `CLICKHOUSE_PROOF_REQUIRED=true` (telemetry proof, models, log feed, activity
+log, admin dashboards, logs-tab feature specs — ~250 examples, 0 failures). Zero
+query changes needed; the only core-side edits were the Gemfile and one rake-task
+seam (`connection.migration_context` → `connection_pool.migration_context`). Fixes
+it forced here: ledger #39–#41. Still open for release: README (ankane style),
+CHANGELOG, CI matrix (Ruby 3.2/3.4/4.0 × AR 8.1/edge × ClickHouse 25.8 LTS/latest),
+0.1.0 gem release.
 
 ## 7. Spec strategy (three tiers)
 

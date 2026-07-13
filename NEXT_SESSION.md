@@ -1,13 +1,14 @@
-# Iteration 17: basics_test corpus (the last big compat suite)
+# Iteration 18: basics_test corpus (the last big compat suite)
 
-> Status at handoff: 415 rspec examples green (plus the rails-compat harness: 1,619
-> upstream minitest runs, 0 failures, 138 skips — 64 manifest, 74 capability
-> self-skips), rubocop clean. Iteration 16 landed both tracks: the associations
-> corpus (`belongs_to` + `has_many`, ledger #36 mutation-count rewrite, subquery
-> qualifier preservation) and the performance pair — RowBinary default read wire
-> with per-query JSON fallback (ledger #37) and `insert_stream` chunked bulk
-> ingestion (ledger #38). Baseline roughly doubled: 10k-row select 13.2 → 23.5 i/s
-> at 10.6 MB; 1k-row ingest 5.6 ms via stream vs 26.6 ms via insert_all!.
+> Status at handoff: 420 rspec examples green (plus the rails-compat harness: 1,619
+> upstream minitest runs, 0 failures, skips all manifest-documented), rubocop clean. Iteration 17 was the
+> Phase 9 proving ground: TRMNL core runs on this adapter in the
+> `~/Documents/GitHub/core.worktrees/adapter-port` worktree — all 10 sink migrations
+> verbatim, every ClickHouse-touching core spec green under
+> `CLICKHOUSE_PROOF_REQUIRED=true`, zero query rewrites needed. The port forced three
+> adapter fixes (ledger #39–#41): `insert_all` duplicate-skip is now vacuously
+> satisfied, trailing sqlcommenter comments are hoisted on INSERT, and the gemspec no
+> longer touches the ActiveRecord namespace (path-gem consumers used to crash at boot).
 
 ## Scope
 
@@ -23,12 +24,24 @@ If `basics_test` lands early, candidates in value order: `has_one` +
 `habtm` association suites (small marginal cost now), or window-function relation
 sugar (the last big OLAP deferral).
 
+**Core-port follow-ups (small, from Iteration 17):** the port worktree still holds
+two uncommitted core-side edits (Gemfile swap, `connection_pool.migration_context`
+in `lib/tasks/clickhouse.rake`) — Ikraam decides if/when that becomes a core PR.
+The adapter's `ssl: true` path verifies certs (incumbent was VERIFY_NONE); prod
+sinks on self-signed certs need a `verify_mode`/`ssl_verify: false` escape hatch
+before this swap can deploy — worth a spec'd config option this iteration if time
+allows.
+
 ## Watch out for (carried forward + new)
 
-- The read wire is now RowBinary. Any new server type shows up as
-  `RowBinary::Undecodable` → silent JSON fallback per query — if a harness test
-  gets mysteriously slow, check whether its type fell back (log the format on
-  the retry if this bites).
+- `insert_all` no longer raises — duplicate rows insert cleanly (ledger #39). Any
+  spec that asserted the old ArgumentError is already updated; don't reintroduce it.
+- ClickHouse rejects trailing `/*...*/` after `INSERT ... VALUES` (code 27);
+  `hoist_trailing_comments` moves them to the front of INSERTs only (ledger #40).
+- Never `require_relative` the version file from the gemspec (ledger #41) — the
+  namespace-isolation spec guards this.
+- The read wire is RowBinary. Any new server type shows up as
+  `RowBinary::Undecodable` → silent JSON fallback per query.
 - `insert_stream` takes column names from the first row; rows with differing key
   sets silently insert defaults for the missing columns.
 - The slice cannot carry a column named like its own table (UNSUPPORTED_METHOD, §2);
@@ -39,7 +52,7 @@ sugar (the last big OLAP deferral).
   cpk models whose slice table has a single-column sorting key hit
   `next_sequence_value(nil)`; skip, don't special-case.
 - Mutation affected-row counts are a pre-mutation `SELECT count()` (decision #24)
-  that now follows the ORDER/LIMIT subquery rewrite (ledger #36); raw-SQL
+  that follows the ORDER/LIMIT subquery rewrite (ledger #36); raw-SQL
   mutations still return 0.
 - Sorting-key columns are immutable (CANNOT_UPDATE_COLUMN, code 420); no
   correlated subqueries in mutation SETs (UNKNOWN_IDENTIFIER, code 47).
@@ -50,4 +63,4 @@ sugar (the last big OLAP deferral).
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 18.
+read/write path was touched, this file rewritten for Iteration 19.
