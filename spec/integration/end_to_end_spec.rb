@@ -96,6 +96,14 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(model.settings(max_threads: 1).count).to eq(3)
   end
 
+  it "matches nothing when finding by a nil condition" do
+    expect(model.where(duration_ms: nil).count).to eq(0)
+  end
+
+  it "matches nothing when finding by an empty id list" do
+    expect(model.where(device_id: []).count).to eq(0)
+  end
+
   it "explains index pruning on the sorting key" do
     expect(model.where(device_id: 1).explain(:indexes).inspect).to include("PrimaryKey")
   end

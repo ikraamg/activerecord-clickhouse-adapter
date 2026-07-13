@@ -238,6 +238,7 @@ module ActiveRecord
         # BigDecimal before values reach here.
         def format_query_param(value)
           case value
+          when nil then "\\N"
           when true, false then value
           else
             string = value.to_s
@@ -248,6 +249,10 @@ module ActiveRecord
         # Date/Time binds arrive as pre-formatted strings (adapter type_cast), so only the
         # declared AR type can recover them; everything else is inferable from the value.
         def clickhouse_bind_type(bind, casted_value)
+          # Nullable(Nothing) is the only param type that both carries NULL and compares
+          # against any column type (probed 2026-07-13, PLAN.md §2).
+          return "Nullable(Nothing)" if casted_value.nil?
+
           type = bind.type if bind.respond_to?(:type)
           case type
           when ActiveRecord::Type::Date then "Date"

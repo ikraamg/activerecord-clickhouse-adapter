@@ -67,4 +67,19 @@ RSpec.describe "ClickHouse server-side binds" do
     expect { connection.select_value("SELECT ?", nil, [2**300]) }
       .to raise_error(ActiveRecord::StatementInvalid, /out of range/)
   end
+
+  # Probed 2026-07-13: Nullable(Nothing) is the one param type that carries NULL (as \N)
+  # and still compares against any column type, so nil binds match SQL NULL semantics.
+  it "binds nil as SQL NULL" do
+    expect(connection.select_value("SELECT ? IS NULL", nil, [nil])).to eq(1)
+  end
+
+  it "matches no rows when nil is compared with equals" do
+    expect(connection.select_value("SELECT count() FROM (SELECT 1 AS x) WHERE x = ?", nil, [nil])).to eq(0)
+  end
+
+  it "matches no rows when nil joins an integer IN list" do
+    sql = "SELECT count() FROM (SELECT 1 AS x) WHERE x IN (?)"
+    expect(connection.select_value(sql, nil, [nil])).to eq(0)
+  end
 end
