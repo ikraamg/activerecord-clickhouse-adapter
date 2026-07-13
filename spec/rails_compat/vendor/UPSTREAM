@@ -7,9 +7,11 @@ Vendored from rails/rails tag v8.1.3 (activerecord/test/), byte-exact:
 - cases/insert_all_test.rb
 - cases/finder_test.rb
 - cases/persistence_test.rb
-- models/* (every model the vendored cases require)
+- cases/relations_test.rb
+- models/* (every model the vendored cases require, incl. models/dats/*)
 - fixtures/* (every fixture set the vendored cases declare)
-- support/async_helper.rb, support/stubs/strong_parameters.rb
+- support/async_helper.rb, support/stubs/strong_parameters.rb,
+  support/deprecated_associations_test_helpers.rb
 
 Refresh with:
   git -C ../rails-main show v8.1.3:activerecord/test/<path> > vendor/<path>

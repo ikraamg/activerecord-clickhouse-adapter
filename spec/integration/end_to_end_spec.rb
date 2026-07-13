@@ -225,6 +225,26 @@ RSpec.describe "End-to-end telemetry spine" do
     ActiveRecord::Base.lease_connection.drop_table("spine_audits", if_exists: true)
   end
 
+  # Two joins trigger the analyzer's qualified-star renaming (spine_events.device_id);
+  # the adapter strips the qualifiers so attributes map by bare name as Rails expects.
+  it "reads whole rows through a multi-join without losing attribute names" do
+    connection = ActiveRecord::Base.lease_connection
+    connection.drop_table("spine_devices", if_exists: true)
+    connection.create_table("spine_devices", order: "id") do |t|
+      t.integer :id, limit: 8
+      t.string :label, default: ""
+    end
+    connection.execute("INSERT INTO spine_devices VALUES (1, 'lobby'), (2, 'kitchen')")
+
+    event = model.select("spine_events.*")
+                 .joins("INNER JOIN spine_devices ON spine_devices.id = spine_events.device_id")
+                 .joins("INNER JOIN spine_devices AS twins ON twins.id = spine_events.device_id")
+                 .where(event_type: "serve").take
+    expect(event.duration_ms).to eq(30)
+  ensure
+    ActiveRecord::Base.lease_connection.drop_table("spine_devices", if_exists: true)
+  end
+
   it "survives a schema dump, reload, and re-query round trip" do
     ActiveRecord::SchemaDumper.ignore_tables = [->(table) { table != "spine_events" }]
     dump = ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection_pool, StringIO.new).string

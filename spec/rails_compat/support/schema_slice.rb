@@ -22,16 +22,16 @@ module ARCompat
     # Tables the harness must reset between tests beyond the fixture tables, which
     # reload every test anyway (decision #15: truncation, no transactions to roll back).
     TABLES = %w[
-      1_need_quoting accounts admin_users aircraft audit_logs author_addresses authors
-      auto_id_tests books cars carts
+      1_need_quoting accounts admin_users aircraft audit_logs author_addresses author_favorites authors
+      auto_id_tests birds books bulbs cars carts
       categories categories_posts categorizations clothing_items clubs comments companies computers
       computers_developers contracts
       cpk_books cpk_chapters cpk_orders cpk_reviews customers dashboards developers
       developers_projects
-      dog_lovers dogs edges entrants having mateys minimalistics minivans non_primary_keys
-      numeric_data organizations parrots people posts projects ratings ship_parts ships
+      dog_lovers dogs edges engines entrants having mateys minimalistics minivans non_primary_keys
+      numeric_data organizations parrots people posts projects ratings readers ship_parts ships
       speedometers subscribers subscriptions taggings tags tires topics
-      toooooooooooooooooooooooooooooooooo_long_table_names toys treasures
+      toooooooooooooooooooooooooooooooooo_long_table_names toys treasures wheels
     ].freeze
 
     module_function
@@ -131,6 +131,29 @@ module ARCompat
         t.datetime :created_at, precision: 6, null: true
         t.datetime :updated_at, precision: 6, null: true
         t.date :updated_on, null: true
+      end
+
+      connection.create_table :author_favorites, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :author_id, limit: 8, null: true
+        t.integer :favorite_author_id, limit: 8, null: true
+      end
+
+      connection.create_table :birds, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.string :color, null: true
+        t.integer :pirate_id, limit: 8, null: true
+      end
+
+      # Upstream names the pk column "ID"; the DATS tests never touch the custom
+      # casing, so the slice keeps the conventional name.
+      connection.create_table :bulbs, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :car_id, limit: 8, null: true
+        t.string :name, null: true
+        t.boolean :frickinawesome, default: false, null: true
+        t.string :color, null: true
       end
 
       connection.create_table :cars, force: true, order: "id" do |t|
@@ -338,6 +361,11 @@ module ARCompat
         t.integer :sink_id, limit: 8
       end
 
+      connection.create_table :engines, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :car_id, limit: 8, null: true
+      end
+
       connection.create_table :entrants, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name
@@ -451,6 +479,14 @@ module ARCompat
         t.integer :mentor_id, limit: 8, null: true
       end
 
+      connection.create_table :readers, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :post_id, limit: 8
+        t.integer :person_id, limit: 8
+        t.boolean :skimmer, default: false, null: true
+        t.integer :first_post_id, limit: 8, null: true
+      end
+
       connection.create_table :ratings, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :comment_id, limit: 8, null: true
@@ -516,6 +552,13 @@ module ARCompat
       connection.create_table :tires, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :car_id, limit: 8, null: true
+      end
+
+      connection.create_table :wheels, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :size, null: true
+        t.string :wheelable_type, null: true
+        t.integer :wheelable_id, limit: 8, null: true
       end
 
       connection.create_table :topics, force: true, order: "id" do |t|

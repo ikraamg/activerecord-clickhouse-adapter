@@ -10,6 +10,8 @@ gem "activerecord", path: "../rails-main/activerecord" if ENV["RAILS_SOURCE"] ==
 
 group :development, :test do
   gem "benchmark-ips"
+  # to_xml in the vendored relations_test serializes through Builder, as upstream does.
+  gem "builder", require: false
   gem "debug"
   gem "memory_profiler"
   # Runs the vendored Rails AR suites in spec/rails_compat; 5.x because Rails 8.1's

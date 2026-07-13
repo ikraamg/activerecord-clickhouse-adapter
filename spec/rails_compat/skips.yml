@@ -43,6 +43,43 @@ PersistenceTest:
   test_update_all_with_custom_sql_as_value: >-
     correlated subquery in a mutation SET raises UNKNOWN_IDENTIFIER (no correlated subqueries)
 
+RelationTest:
+  # ClickHouse has no functional-dependency GROUP BY (same family as CalculationsTest).
+  test_multiple_where_and_having_clauses: >-
+    SELECT t.* GROUP BY t.id needs functional-dependency GROUP BY (NOT_AN_AGGREGATE)
+  test_having_with_binds_for_both_where_and_having: >-
+    SELECT t.* GROUP BY t.id needs functional-dependency GROUP BY (NOT_AN_AGGREGATE)
+
+  # ClickHouse has no unique constraints: create_or_find_by's INSERT never raises
+  # RecordNotUnique, so the conflict-recovery paths these tests exercise cannot fire.
+  test_find_or_create_by_race_condition: >-
+    no unique constraints — the losing INSERT succeeds instead of raising RecordNotUnique
+  test_create_or_find_by_with_non_unique_attributes: >-
+    no unique constraints — the second INSERT succeeds instead of raising RecordNotUnique
+  test_create_or_find_by_with_bang_with_non_unique_attributes: >-
+    no unique constraints — the second INSERT succeeds instead of raising RecordNotUnique
+  test_create_or_find_by_rollbacks_a_transaction: >-
+    needs a real transaction rollback; ClickHouse transactions are honest no-ops
+  test_create_or_find_by_bang_rollbacks_a_transaction: >-
+    needs a real transaction rollback; ClickHouse transactions are honest no-ops
+
+  # A column named like its own table breaks every qualified star — `comments.*`
+  # resolves to the Int32 column, not the table (UNSUPPORTED_METHOD, probed 2026-07-13)
+  # — so the slice cannot carry the upstream comments.comments column.
+  test_unscope_with_unknown_column: >-
+    needs a comments.comments column, which would break SELECT comments.* server-side
+
+  # A FROM alias that equals a real table name shadows that table in later JOINs:
+  # `FROM posts AS categories_posts JOIN categories_posts` joins the aliased posts
+  # table again (UNKNOWN_IDENTIFIER, probed 2026-07-13).
+  test_alias_tracker_respects_a_custom_table: >-
+    FROM alias shadowing a real table name breaks JOIN resolution (UNKNOWN_IDENTIFIER)
+
+  # Same seam as PersistenceTest: Rails' prefetch path asks for one generated value
+  # even when the model's composite primary key is already fully assigned.
+  test_find_or_initialize_by_with_cpk_association: >-
+    Rails' prefetch seam cannot populate one column of a composite primary key
+
 InsertAllTest:
   # These three exercise semantics ClickHouse does not have: unique constraints and
   # ON CONFLICT handling. The adapter raises honestly from insert_all/upsert_all
