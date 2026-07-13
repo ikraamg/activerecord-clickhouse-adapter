@@ -86,6 +86,21 @@ module ActiveRecord
           returning.map { |column| column.to_s == pk.to_s ? inserted_id : nil }
         end
 
+        # Mutations report no affected-row count (X-ClickHouse-Summary stays all zeros —
+        # probed 2026-07-13), so matching rows are counted just before mutating. Rows
+        # touched by concurrent writes between the two statements are not reflected.
+        def update(arel, name = nil, binds = [])
+          matched_rows = mutation_target_count(arel, name)
+          result = super
+          matched_rows || result
+        end
+
+        def delete(arel, name = nil, binds = [])
+          matched_rows = mutation_target_count(arel, name)
+          result = super
+          matched_rows || result
+        end
+
         # The abstract default (CURRENT_TIMESTAMP) is not a ClickHouse identifier.
         # Rails stamps date (created_on) and datetime (created_at) attributes with this
         # one expression, and only a plain DateTime coerces into both Date32 and
@@ -109,6 +124,24 @@ module ActiveRecord
         end
 
         private
+
+        # nil for raw-SQL mutations and for statements carrying LIMIT/ORDER (the visitor
+        # rewrites those into subqueries the count cannot mirror cheaply); callers then
+        # fall back to the server's report of zero.
+        def mutation_target_count(arel, name)
+          ast = arel.respond_to?(:ast) ? arel.ast : arel
+          return nil unless countable_mutation?(ast)
+
+          select = Arel::SelectManager.new(ast.relation)
+          select.project(Arel.star.count)
+          ast.wheres.each { |where| select.where(where) }
+          select_value(select, "#{name} Count").to_i
+        end
+
+        def countable_mutation?(ast)
+          (ast.is_a?(Arel::Nodes::UpdateStatement) || ast.is_a?(Arel::Nodes::DeleteStatement)) &&
+            ast.limit.nil? && ast.orders.empty?
+        end
 
         GENERATABLE_ID_TYPES = /\A(?:U?Int(?:64|128|256)|UUID)\z/
         private_constant :GENERATABLE_ID_TYPES

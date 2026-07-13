@@ -87,9 +87,17 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(model.where(event_type: "render").distinct.pluck(:duration_ms)).to eq([0])
   end
 
+  it "reports how many rows a mutation touched" do
+    expect(model.where(event_type: "render").update_all(duration_ms: 0)).to eq(2)
+  end
+
   it "deletes matching rows with a lightweight delete" do
     model.where(device_id: 1).delete_all
     expect(model.pluck(:device_id)).to eq([2])
+  end
+
+  it "reports how many rows a delete removed" do
+    expect(model.where(device_id: 1).delete_all).to eq(2)
   end
 
   it "scopes a query with per-query SETTINGS" do

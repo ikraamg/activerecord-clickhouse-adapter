@@ -78,6 +78,16 @@ RSpec.describe "ClickHouse CRUD semantics" do
       expect(model.count).to eq(0)
     end
 
+    # The server reports no affected-row count for mutations (X-ClickHouse-Summary is
+    # all zeros — probed 2026-07-13), so the adapter counts matching rows first.
+    it "returns the number of deleted rows" do
+      expect(model.where(device_id: [1, 2]).delete_all).to eq(2)
+    end
+
+    it "returns the full count for an unscoped delete" do
+      expect(model.delete_all).to eq(3)
+    end
+
     # Ported from ../clickhouse/tests/queries/0_stateless/02319_lightweight_delete_on_merge_tree.sql
     it "deletes across a 100-row part by equality then IN-list, matching the upstream oracle" do
       model.delete_all
@@ -106,6 +116,14 @@ RSpec.describe "ClickHouse CRUD semantics" do
     it "mutates every row when unscoped" do
       model.update_all(status: "swept")
       expect(model.distinct.pluck(:status)).to eq(["swept"])
+    end
+
+    it "returns the number of matching rows" do
+      expect(model.where(device_id: 1).update_all(status: "done")).to eq(1)
+    end
+
+    it "returns the full count for an unscoped update" do
+      expect(model.update_all(status: "swept")).to eq(2)
     end
   end
 end
