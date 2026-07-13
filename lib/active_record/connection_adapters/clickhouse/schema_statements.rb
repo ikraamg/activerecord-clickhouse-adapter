@@ -24,6 +24,18 @@ module ActiveRecord
           execute("RENAME TABLE #{quote_table_name(table_name)} TO #{quote_table_name(new_name)}")
         end
 
+        # MODIFY COLUMN accepts DEFAULT without restating the type; REMOVE DEFAULT
+        # drops it (probed 2026-07-13).
+        def change_column_default(table_name, column_name, default_or_changes)
+          default = extract_new_default_value(default_or_changes)
+          rendered = default.respond_to?(:call) ? default.call : quote(default)
+          alteration = default.nil? ? "REMOVE DEFAULT" : "DEFAULT #{rendered}"
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}
+            MODIFY COLUMN #{quote_column_name(column_name)} #{alteration}
+          SQL
+        end
+
         def tables
           select_values(data_source_sql(type: "BASE TABLE"), "SCHEMA")
         end

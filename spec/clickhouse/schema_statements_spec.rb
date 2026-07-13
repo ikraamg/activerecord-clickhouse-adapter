@@ -102,4 +102,32 @@ RSpec.describe "ClickHouse schema statements" do
   it "reports no Active Record primary key (ClickHouse sorting keys are not unique)" do
     expect(connection.primary_keys("schema_probe")).to eq([])
   end
+
+  describe "change_column_default" do
+    before(:all) do
+      conn = ActiveRecord::Base.lease_connection
+      conn.create_table("default_probe", force: true, order: "id") do |t|
+        t.integer :id, limit: 8
+        t.string :status, default: "old"
+      end
+    end
+
+    after(:all) do
+      ActiveRecord::Base.lease_connection.drop_table("default_probe", if_exists: true)
+    end
+
+    it "replaces a literal default" do
+      connection.change_column_default("default_probe", "status", "new")
+      expect(connection.columns("default_probe").find { |c| c.name == "status" }.default).to eq("new")
+    ensure
+      connection.change_column_default("default_probe", "status", "old")
+    end
+
+    it "removes the default when given nil" do
+      connection.change_column_default("default_probe", "status", nil)
+      expect(connection.columns("default_probe").find { |c| c.name == "status" }.default).to be_nil
+    ensure
+      connection.change_column_default("default_probe", "status", "old")
+    end
+  end
 end
