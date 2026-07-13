@@ -60,6 +60,16 @@ module ActiveRecord
           parse(response)
         end
 
+        # Scopes extra server settings to the requests made inside the block — the
+        # write-side counterpart of the SETTINGS clause SELECTs carry in-SQL.
+        def with_request_settings(settings)
+          previous = @request_settings
+          @request_settings = (previous || {}).merge(settings)
+          yield
+        ensure
+          @request_settings = previous
+        end
+
         def ping
           execute("SELECT 1")
           true
@@ -94,6 +104,7 @@ module ActiveRecord
 
         def query_params(params)
           session_settings.merge(async_insert_params)
+                          .merge(@request_settings || {})
                           .merge(params.transform_keys { |key| "param_#{key}" }).compact
         end
 

@@ -31,6 +31,19 @@ module ActiveRecord
         class OrderWithFill < ::Arel::Nodes::Unary
           attr_accessor :step
         end
+
+        # ARRAY JOIN unnests array columns into rows; rides the join list so it renders
+        # after FROM and any regular JOINs, before WHERE.
+        class ArrayJoin < ::Arel::Nodes::Node
+          attr_reader :columns, :left, :alias_name
+
+          def initialize(columns, left:, alias_name:)
+            super()
+            @columns = columns
+            @left = left
+            @alias_name = alias_name
+          end
+        end
       end
 
       # Relation methods for the ClickHouse query surface. Injected via
@@ -90,6 +103,17 @@ module ActiveRecord
           assign_clickhouse_dialect(fill: { step: fill_step_sql(step) })
         end
 
+        # Unnests array columns into one row per element; as: names the element so the
+        # original array column stays addressable. left: true keeps empty-array rows.
+        def array_join(*columns, left: false, as: nil) = spawn.array_join!(*columns, left: left, as: as)
+
+        def array_join!(*columns, left: false, as: nil)
+          raise ArgumentError, "as: names a single element, so array_join takes one column with it" if
+            as && columns.many?
+
+          assign_clickhouse_dialect(array_join: { columns: columns.flatten, left: left, as: as })
+        end
+
         # ClickHouse renders WITH TOTALS out-of-band, which the row-stream wire format
         # drops (probed 2026-07-13) — ROLLUP delivers totals as ordinary rows instead,
         # keyed nil thanks to group_by_use_nulls.
@@ -124,17 +148,31 @@ module ActiveRecord
           apply_clickhouse_dialect(manager.ast) unless clickhouse_dialect.empty?
           manager
         end
+      end
+
+      # Compiles the dialect state RelationMethods accumulated into the Arel AST right
+      # before SQL generation; only RelationMethods#build_arel calls in here.
+      module RelationDialectCompilation
+        private
 
         def apply_clickhouse_dialect(ast)
           dialect = clickhouse_dialect
           core = ast.cores.last
           apply_table_modifiers(core, dialect)
+          apply_array_join(core, dialect)
           apply_prewheres(core, dialect)
           apply_rollup(core, dialect)
           apply_fill(ast, dialect)
           return unless dialect[:limit_by] || dialect[:settings]
 
           ast.lock = Nodes::DialectSuffix.new(limit_by: dialect[:limit_by], settings: dialect[:settings])
+        end
+
+        def apply_array_join(core, dialect)
+          spec = dialect[:array_join] or return
+
+          columns = spec[:columns].map { |column| klass.arel_table[column] }
+          core.source.right << Nodes::ArrayJoin.new(columns, left: spec[:left], alias_name: spec[:as])
         end
 
         def apply_rollup(core, dialect)
@@ -166,6 +204,28 @@ module ActiveRecord
           modified.final = dialect[:final]
           modified.sample = dialect[:sample]
           core.source.left = modified
+        end
+      end
+
+      # Writes can't carry an in-SQL SETTINGS clause the way SELECTs do (ALTER and
+      # INSERT grammars each differ), so a relation's settings travel as per-request
+      # HTTP query parameters instead.
+      module RelationWrites
+        def update_all(...) = with_write_settings { super }
+
+        def delete_all(...) = with_write_settings { super }
+
+        def insert_all(...) = with_write_settings { super }
+
+        def insert_all!(...) = with_write_settings { super }
+
+        private
+
+        def with_write_settings(&block)
+          settings = clickhouse_dialect[:settings]
+          return yield if settings.blank?
+
+          klass.with_connection { |connection| connection.with_request_settings(settings, &block) }
         end
       end
 
@@ -250,11 +310,13 @@ module ActiveRecord
         extend ActiveSupport::Concern
 
         included do
-          default_scope { extending(RelationMethods, RelationCalculations) }
+          default_scope do
+            extending(RelationMethods, RelationDialectCompilation, RelationWrites, RelationCalculations)
+          end
         end
 
         class_methods do
-          delegate :final, :sample, :prewhere, :settings, :limit_by,
+          delegate :final, :sample, :prewhere, :settings, :limit_by, :array_join,
                    :group_by_period, :fill, :rollup, :uniq_count, :quantile,
                    :top_k, :arg_max, :arg_min, :estimated_count, to: :all
         end

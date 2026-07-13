@@ -2,7 +2,66 @@
 
 module Arel
   module Visitors
+    # Rendering for the adapter's own dialect nodes (WITH FILL, ROLLUP, ARRAY JOIN and
+    # the LIMIT BY/SETTINGS suffix) — split from the statement-shape overrides below.
+    module ClickHouseDialectRendering
+      private
+
+      # LIMIT BY renders before LIMIT (probed: the reverse is a syntax error) and
+      # SETTINGS renders last; both ride in the unused lock slot.
+      def visit_Arel_Nodes_SelectOptions(o, collector)
+        suffix = o.lock if o.lock.is_a?(ActiveRecord::ConnectionAdapters::ClickHouse::Nodes::DialectSuffix)
+        return super unless suffix
+
+        collector << " LIMIT #{limit_by_clause(suffix.limit_by)}" if suffix.limit_by
+        collector = maybe_visit o.limit, collector
+        collector = maybe_visit o.offset, collector
+        collector << " SETTINGS #{settings_clause(suffix.settings)}" if suffix.settings.present?
+        collector
+      end
+
+      def limit_by_clause(limit_by)
+        count, columns = limit_by
+        "#{count} BY #{columns.map { |column| quote_column_name(column) }.join(", ")}"
+      end
+
+      def settings_clause(settings)
+        settings.map do |name, value|
+          unless /\A[a-zA-Z_][a-zA-Z0-9_]*\z/.match?(name.to_s)
+            raise ArgumentError, "invalid ClickHouse setting name: #{name.inspect}"
+          end
+
+          "#{name} = #{quote(value)}"
+        end.join(", ")
+      end
+
+      def visit_ActiveRecord_ConnectionAdapters_ClickHouse_Nodes_OrderWithFill(o, collector)
+        collector = visit o.expr, collector
+        collector << " WITH FILL"
+        collector << " STEP #{o.step}" if o.step
+        collector
+      end
+
+      # Arel ships RollUp for grouping sets but only the PostgreSQL visitor renders it;
+      # ClickHouse shares the GROUP BY ROLLUP(a, b) spelling.
+      def visit_Arel_Nodes_RollUp(o, collector)
+        collector << "ROLLUP("
+        collector = inject_join o.expr, collector, ", "
+        collector << ")"
+      end
+
+      def visit_ActiveRecord_ConnectionAdapters_ClickHouse_Nodes_ArrayJoin(o, collector)
+        collector << "LEFT " if o.left
+        collector << "ARRAY JOIN "
+        collector = inject_join o.columns, collector, ", "
+        collector << " AS #{quote_column_name(o.alias_name)}" if o.alias_name
+        collector
+      end
+    end
+
     class ClickHouse < ToSql
+      include ClickHouseDialectRendering
+
       private
 
       # ClickHouse's mutation machinery (lightweight DELETE, ALTER UPDATE) resolves WHERE
@@ -79,49 +138,6 @@ module Arel
         yield
       ensure
         @pending_prewheres = nil
-      end
-
-      # LIMIT BY renders before LIMIT (probed: the reverse is a syntax error) and
-      # SETTINGS renders last; both ride in the unused lock slot.
-      def visit_Arel_Nodes_SelectOptions(o, collector)
-        suffix = o.lock if o.lock.is_a?(ActiveRecord::ConnectionAdapters::ClickHouse::Nodes::DialectSuffix)
-        return super unless suffix
-
-        collector << " LIMIT #{limit_by_clause(suffix.limit_by)}" if suffix.limit_by
-        collector = maybe_visit o.limit, collector
-        collector = maybe_visit o.offset, collector
-        collector << " SETTINGS #{settings_clause(suffix.settings)}" if suffix.settings.present?
-        collector
-      end
-
-      def limit_by_clause(limit_by)
-        count, columns = limit_by
-        "#{count} BY #{columns.map { |column| quote_column_name(column) }.join(", ")}"
-      end
-
-      def settings_clause(settings)
-        settings.map do |name, value|
-          unless /\A[a-zA-Z_][a-zA-Z0-9_]*\z/.match?(name.to_s)
-            raise ArgumentError, "invalid ClickHouse setting name: #{name.inspect}"
-          end
-
-          "#{name} = #{quote(value)}"
-        end.join(", ")
-      end
-
-      def visit_ActiveRecord_ConnectionAdapters_ClickHouse_Nodes_OrderWithFill(o, collector)
-        collector = visit o.expr, collector
-        collector << " WITH FILL"
-        collector << " STEP #{o.step}" if o.step
-        collector
-      end
-
-      # Arel ships RollUp for grouping sets but only the PostgreSQL visitor renders it;
-      # ClickHouse shares the GROUP BY ROLLUP(a, b) spelling.
-      def visit_Arel_Nodes_RollUp(o, collector)
-        collector << "ROLLUP("
-        collector = inject_join o.expr, collector, ", "
-        collector << ")"
       end
 
       def visit_Arel_Attributes_Attribute(o, collector)

@@ -25,6 +25,18 @@ module ActiveRecord
         }.freeze
         private_constant :EXPLAIN_VARIANTS
 
+        # Scopes extra ClickHouse settings to every request made inside the block —
+        # the write-path counterpart of a relation's in-SQL SETTINGS clause. Validated
+        # here, before with_raw_connection wraps errors into StatementInvalid.
+        def with_request_settings(settings, &block)
+          settings.each_key do |name|
+            unless /\A[a-zA-Z_][a-zA-Z0-9_]*\z/.match?(name.to_s)
+              raise ArgumentError, "invalid ClickHouse setting name: #{name.inspect}"
+            end
+          end
+          with_raw_connection { |raw_connection| raw_connection.with_request_settings(settings, &block) }
+        end
+
         def explain(arel, binds = [], options = []) # :nodoc:
           sql = "#{build_explain_clause(options)} #{to_sql(arel, binds)}"
           result = internal_exec_query(sql, "EXPLAIN", binds)
