@@ -15,9 +15,11 @@ Gem::Specification.new do |spec|
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2"
 
-  spec.files = Dir["lib/**/*", "LICENSE*", "README.md"]
+  spec.files = Dir["lib/**/*", "CHANGELOG.md", "LICENSE*", "README.md"]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "activerecord", ">= 8.1", "< 9.0"
   spec.metadata["rubygems_mfa_required"] = "true"
+  spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
+  spec.metadata["source_code_uri"] = spec.homepage
 end
