@@ -4,15 +4,20 @@ require "json"
 require "net/http"
 require "uri"
 
+require "active_record/connection_adapters/clickhouse/row_binary"
+
 module ActiveRecord
   module ConnectionAdapters
     module ClickHouse
       # Raw connection to a ClickHouse server over its HTTP interface: one persistent
       # keep-alive Net::HTTP socket per adapter instance (the adapter lock serializes use).
-      # Results arrive as JSONCompactEachRowWithNamesAndTypes — names line, types line,
-      # then one JSON array per row — so every value comes back with its server type.
+      # Results arrive as RowBinaryWithNamesAndTypes by default — names, type strings,
+      # then packed binary rows — so every value comes back with its server type; queries
+      # whose types have no binary decoder retry transparently on the JSON wire
+      # (select_format: :json in the config forces JSON for everything).
       class HTTPConnection
-        SELECT_FORMAT = "JSONCompactEachRowWithNamesAndTypes"
+        BINARY_FORMAT = "RowBinaryWithNamesAndTypes"
+        JSON_FORMAT = "JSONCompactEachRowWithNamesAndTypes"
 
         class ExecutionError < StandardError
           attr_reader :code
@@ -50,14 +55,14 @@ module ActiveRecord
 
         def initialize(config)
           @config = config
+          @select_format = config[:select_format].to_s == "json" ? JSON_FORMAT : BINARY_FORMAT
           @http = build_http
         end
 
         def execute(sql, params: {})
-          response = @http.request(build_request(sql, params))
-          raise_execution_error(response) unless response.is_a?(Net::HTTPSuccess)
-
-          parse(response)
+          parse(perform(sql, params, @select_format), @select_format)
+        rescue RowBinary::Undecodable
+          parse(perform(sql, params, JSON_FORMAT), JSON_FORMAT)
         end
 
         # Scopes extra server settings to the requests made inside the block — the
@@ -94,28 +99,45 @@ module ActiveRecord
           http
         end
 
-        def build_request(sql, params)
-          request = Net::HTTP::Post.new("/?#{URI.encode_www_form(query_params(params))}")
+        def perform(sql, params, format)
+          request = post_request(query_params(params, format))
+          request.body = sql
+          raise_unless_success(@http.request(request))
+        end
+
+        def post_request(params)
+          request = Net::HTTP::Post.new("/?#{URI.encode_www_form(params)}")
           request["X-ClickHouse-User"] = @config[:username] if @config[:username]
           request["X-ClickHouse-Key"] = @config[:password] if @config[:password]
-          request.body = sql
           request
         end
 
-        def query_params(params)
-          session_settings.merge(async_insert_params)
-                          .merge(@request_settings || {})
-                          .merge(params.transform_keys { |key| "param_#{key}" }).compact
+        def raise_unless_success(response)
+          raise_execution_error(response) unless response.is_a?(Net::HTTPSuccess)
+
+          response
         end
 
-        def session_settings
-          {
+        def query_params(params, format)
+          session_settings(format).merge(async_insert_params)
+                                  .merge(@request_settings || {})
+                                  .merge(params.transform_keys { |key| "param_#{key}" }).compact
+        end
+
+        # Defaults corrupt silently: JSON Decimals float-parse lossily, NaN/Inf become
+        # null; binary JSON columns have no stable layout, so they travel as text.
+        OUTPUT_SETTINGS = {
+          output_format_json_quote_decimals: 1,
+          output_format_json_quote_denormals: 1,
+          output_format_binary_write_json_as_string: 1
+        }.freeze
+        private_constant :OUTPUT_SETTINGS
+
+        def session_settings(format)
+          OUTPUT_SETTINGS.merge(
             database: @config[:database],
-            default_format: SELECT_FORMAT,
+            default_format: format,
             wait_end_of_query: 1,
-            # Defaults corrupt silently: Decimals float-parse lossily, NaN/Inf become null.
-            output_format_json_quote_decimals: 1,
-            output_format_json_quote_denormals: 1,
             # 1/2 make ALTER UPDATE/DELETE mutations block until applied (spec determinism).
             mutations_sync: @config[:mutations_sync],
             # ClickHouse fills non-matched outer-join columns with type defaults (0, '');
@@ -124,7 +146,7 @@ module ActiveRecord
             # Server gzips responses ~3.6x smaller; Net::HTTP decompresses transparently
             # (it sends Accept-Encoding: gzip by default). Probed 2026-07-12, PLAN.md §2.
             enable_http_compression: @config.fetch(:compression, true) ? 1 : 0
-          }
+          )
         end
 
         # Server-side batching for high-frequency small INSERTs. wait_for_async_insert
@@ -141,16 +163,21 @@ module ActiveRecord
           raise ExecutionError.new(response.body.to_s.strip, code: code)
         end
 
-        def parse(response)
-          names, types, *rows = response.body.to_s.each_line.map { |line| JSON.parse(line) }
+        def parse(response, format)
+          names, types, rows = decode_body(response.body.to_s, format)
 
           RawResult.new(
-            columns: names || [],
-            types: types || [],
-            rows: rows,
+            columns: names, types: types, rows: rows,
             summary: JSON.parse(response["x-clickhouse-summary"] || "{}"),
             query_id: response["x-clickhouse-query-id"]
           )
+        end
+
+        def decode_body(body, format)
+          return RowBinary.decode(body) if format == BINARY_FORMAT
+
+          names, types, *rows = body.each_line.map { |line| JSON.parse(line) }
+          [names || [], types || [], rows]
         end
       end
     end

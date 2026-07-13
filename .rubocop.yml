@@ -42,6 +42,10 @@ Metrics/MethodLength:
 Metrics/ClassLength:
   Exclude:
     - lib/active_record/connection_adapters/clickhouse/type_parser.rb
+    # One flat decoder per type family, mirroring types.rb's caster table.
+    - lib/active_record/connection_adapters/clickhouse/row_binary.rb
+    # Carries its RawResult and ChunkedBody value objects as nested classes.
+    - lib/active_record/connection_adapters/clickhouse/http_connection.rb
 
 Metrics/AbcSize:
   Exclude:
