@@ -109,6 +109,21 @@ module Arel
         end.join(", ")
       end
 
+      def visit_ActiveRecord_ConnectionAdapters_ClickHouse_Nodes_OrderWithFill(o, collector)
+        collector = visit o.expr, collector
+        collector << " WITH FILL"
+        collector << " STEP #{o.step}" if o.step
+        collector
+      end
+
+      # Arel ships RollUp for grouping sets but only the PostgreSQL visitor renders it;
+      # ClickHouse shares the GROUP BY ROLLUP(a, b) spelling.
+      def visit_Arel_Nodes_RollUp(o, collector)
+        collector << "ROLLUP("
+        collector = inject_join o.expr, collector, ", "
+        collector << ")"
+      end
+
       def visit_Arel_Attributes_Attribute(o, collector)
         return super unless @unqualify_columns
 
