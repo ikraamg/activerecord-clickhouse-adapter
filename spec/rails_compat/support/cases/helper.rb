@@ -36,6 +36,34 @@ module ARCompat
     def current_adapter?(*names)
       names.include?(:ClickHouseAdapter)
     end
+
+    def in_memory_db?
+      false
+    end
+
+    # Upstream delegates these capability predicates to the live connection so the
+    # vendored suites can self-skip features the adapter doesn't claim.
+    %w[
+      supports_savepoints?
+      supports_partial_index?
+      supports_partitioned_indexes?
+      supports_expression_index?
+      supports_index_include?
+      supports_insert_returning?
+      supports_insert_on_duplicate_skip?
+      supports_insert_on_duplicate_update?
+      supports_insert_conflict_target?
+      supports_optimizer_hints?
+      supports_datetime_with_precision?
+      supports_nulls_not_distinct?
+      supports_identity_columns?
+      supports_virtual_columns?
+      supports_native_partitioning?
+    ].each do |method_name|
+      define_method method_name do
+        ActiveRecord::Base.lease_connection.public_send(method_name)
+      end
+    end
   end
 end
 

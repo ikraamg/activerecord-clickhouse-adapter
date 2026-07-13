@@ -19,9 +19,10 @@ module ARCompat
     # Tables the harness must reset between tests beyond the fixture tables, which
     # reload every test anyway (decision #15: truncation, no transactions to roll back).
     TABLES = %w[
-      1_need_quoting accounts audit_logs author_addresses authors books clubs comments
-      companies contracts cpk_books cpk_chapters developers edges having minivans
-      numeric_data organizations posts ratings ship_parts speedometers topics
+      1_need_quoting accounts audit_logs author_addresses authors books carts clubs
+      comments companies contracts cpk_books cpk_chapters developers edges having
+      minivans numeric_data organizations posts ratings ship_parts ships speedometers
+      subscribers subscriptions topics
       toooooooooooooooooooooooooooooooooo_long_table_names treasures
     ].freeze
 
@@ -91,6 +92,13 @@ module ARCompat
         t.datetime :created_at, precision: 6, null: true
         t.datetime :updated_at, precision: 6, null: true
         t.date :updated_on, null: true
+      end
+
+      # shop_id joins the sorting key, so it stays non-nullable (allow_nullable_key is off).
+      connection.create_table :carts, force: true, order: "(shop_id, id)" do |t|
+        t.integer :id, limit: 8
+        t.integer :shop_id, limit: 8
+        t.string :title, null: true
       end
 
       connection.create_table :clubs, force: true, order: "id" do |t|
@@ -237,10 +245,37 @@ module ARCompat
         t.datetime :updated_at, precision: 6, null: true
       end
 
+      connection.create_table :ships, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :pirate_id, limit: 8, null: true
+        t.integer :developer_id, limit: 8, null: true
+        t.integer :update_only_pirate_id, limit: 8, null: true
+        t.integer :treasures_count, null: true, default: 0
+        t.datetime :created_at, precision: 6, null: true
+        t.datetime :created_on, precision: 6, null: true
+        t.datetime :updated_at, precision: 6, null: true
+        t.datetime :updated_on, precision: 6, null: true
+      end
+
       connection.create_table :speedometers, force: true, order: "speedometer_id" do |t|
         t.string :speedometer_id
         t.string :name, null: true
         t.string :dashboard_id, null: true
+      end
+
+      connection.create_table :subscribers, force: true, order: "nick" do |t|
+        t.string :nick
+        t.string :name, null: true
+        t.integer :id, limit: 8, null: true
+        t.integer :books_count, default: 0
+        t.integer :update_count, default: 0
+      end
+
+      connection.create_table :subscriptions, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :subscriber_id, null: true
+        t.integer :book_id, limit: 8, null: true
       end
 
       connection.create_table :topics, force: true, order: "id" do |t|

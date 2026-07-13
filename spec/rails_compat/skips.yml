@@ -20,3 +20,13 @@ CalculationsTest:
   test_pluck_with_qualified_name_on_loaded: >-
     self-join with unaliased base table raises AMBIGUOUS_IDENTIFIER
 
+InsertAllTest:
+  # These three exercise semantics ClickHouse does not have: unique constraints and
+  # ON CONFLICT handling. The adapter raises honestly from insert_all/upsert_all
+  # (supports_insert_on_duplicate_* and supports_insert_returning? are all false).
+  test_insert_all_raises_on_duplicate_records: >-
+    no unique constraints — duplicate rows insert cleanly, RecordNotUnique never raises
+  test_insert_all_implicitly_sets_primary_keys_when_nil: >-
+    plain insert_all implies duplicate-skip, which the adapter honestly rejects
+  test_upsert_all_implicitly_sets_primary_keys_when_nil: >-
+    upsert_all needs conflict semantics, which the adapter honestly rejects
