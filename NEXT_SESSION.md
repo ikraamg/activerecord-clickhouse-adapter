@@ -1,46 +1,50 @@
-# Iteration 11: persistence_test corpus (update/destroy semantics at scale)
+# Iteration 12: relations_test corpus (query-composition semantics at scale)
 
-> Status at handoff: 238 rspec examples green (incl. the rails-compat harness: 636
-> upstream minitest runs, 0 failures, 87 skips — 13 manifest, 74 capability self-skips),
-> rubocop clean. Iteration 10 landed the per-connection sorting-key cache (decision #21,
-> invalidated by create/drop/rename_table), `rename_table`, the nil-bind fix (decision
-> #22: `Nullable(Nothing)`/`\N` — nil String binds were silently becoming `''`), and the
-> finder_test corpus (+12 models, +9 fixture sets, +18 slice tables). Note: `basics_test`
-> does not exist at v8.1.3 — finder_test was the honest fallback, per the old brief.
+> Status at handoff: 252 rspec examples green (incl. the rails-compat harness: 801
+> upstream minitest runs, 0 failures, 91 skips — 17 manifest, 74 capability self-skips),
+> rubocop clean. Iteration 11 landed the UTC-always `quoted_date` (decision #23 — erased
+> both default_timezone :local skips), client-side affected-row counts for mutations
+> (decision #24 — update_all/delete_all counts, update_columns booleans, and optimistic
+> locking now honest), the returning/write-back fix (decision #25 — a default-function
+> column was swallowing the generated pk), free-form sequence labels in
+> next_sequence_value (Oracle legacy, `companies_nonstd_seq`), `change_column_default`
+> (MODIFY COLUMN ... DEFAULT / REMOVE DEFAULT), and the persistence_test corpus
+> (+12 models incl. `admin/`, +3 fixture sets, +8 slice tables).
 
 ## Scope
 
-1. **Vendor `persistence_test`** (v8.1.3, byte-exact, 1774 lines) — the natural next
-   corpus now that create/update/destroy all work: it exercises update_columns, touch,
-   becomes, destroy, and dup. Requires ~15 new model files (aircraft, dashboard, person,
-   parrot, pirate graph...) with transitive requires; walk them one `require` at a time.
-   Expect honest manifest skips for optimistic locking (no ClickHouse story) and
-   anything needing read-your-write of a mutation Rails fires without `mutations_sync`.
-2. **Schema slice growth rules stay decisions #14/#15**: synthesized `order: "id"`
-   Int64 ids, all columns `null: true` unless the sorting key needs them, FK columns
-   `limit: 8`. New from Iteration 10: never carry a column named like its own table
-   (`comments.comments` breaks the qualified matcher, §2), and `PRIMARY_KEYS` in the
-   slice supports explicit `nil` for tables whose models must stay pk-less.
-3. **Grow the e2e spine** with whatever lands (update/reload round trip, destroy).
+1. **Vendor `relations_test`** (v8.1.3, byte-exact) — the biggest remaining read-path
+   corpus: merge/or/not, unscope, rewhere, structurally-compatible relations. Walk the
+   transitive `require`s one at a time as before. Expect manifest skips clustered on
+   the known server semantics (GROUP BY functional dependency, self-join ambiguity).
+2. **Schema slice growth rules stay decisions #14/#15** plus the Iteration 10/11
+   additions: synthesized `order: "id"` Int64 ids, columns `null: true` unless in the
+   sorting key, FK columns `limit: 8`, never a column named like its own table,
+   `PRIMARY_KEYS` nil-entries for models that must stay pk-less.
+3. **Grow the e2e spine** with whatever lands (relation merge/or round trip).
 4. If touching the read/write path, re-run `bundle exec ruby benchmarks/round_trip.rb`
    and append to `benchmarks/BASELINE.md` history.
 
 ## Watch out for
 
-- The sorting-key cache invalidates only via the migration-API DDL methods; raw
-  `execute("CREATE TABLE ...")` in specs must not rely on prefetch picking the change up.
-- Models that declare a pk whose column type can't be generated (String, composite)
-  raise from `next_sequence_value` with guidance when created without an id. That's
-  decision #19's intent — manifest-skip upstream tests that rely on it instead of
-  weakening the raise.
-- The GROUP BY functional-dependency and self-join AMBIGUOUS_IDENTIFIER skips are
-  server semantics, not adapter bugs — do not try to "fix" them in SQL generation.
-- `default_timezone = :local` cannot work: DateTime64 params reject timezone offsets
-  and columns store naive UTC wall-clock (§2). Skip such tests with that reason.
+- The mutation affected-row count is a pre-mutation `SELECT count()` (decision #24):
+  raw-SQL mutations and LIMIT/ORDER statements return 0. Don't "fix" upstream tests
+  that assert counts on those paths — check what the statement actually was first.
+- `return_value_after_insert?` is false for every column (decision #25). Upstream
+  tests asserting DB-computed defaults appear on the record without reload need
+  manifest skips (no RETURNING), not adapter changes.
+- Sorting-key columns are immutable (CANNOT_UPDATE_COLUMN, code 420) — updating a
+  record's id can never work; skip with that reason.
+- ClickHouse has no correlated subqueries: mutation SET values referencing the target
+  table's own columns raise UNKNOWN_IDENTIFIER (code 47).
+- The legacy analyzer (`enable_analyzer=0`) would fix the self-join and
+  qualified-matcher skips but is deprecated — decision made in Iteration 11 not to
+  pin it. Don't revisit without new server-side evidence.
 - Fixture YAMLs with ERB (`<%= %>`) evaluate in the harness — keep the vendored files
-  byte-exact; adaptations belong in the schema slice or shim.
+  byte-exact and let them run.
 
-## Boundary checklist
+## Definition of done
 
-Full suite green + rubocop zero + PLAN.md updated + this file rewritten + Alchemist
-commits per coherent unit. Never push.
+Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
+skips.yml only grew by honestly-reasoned entries (and shrank where workarounds landed),
+this file rewritten for Iteration 13.

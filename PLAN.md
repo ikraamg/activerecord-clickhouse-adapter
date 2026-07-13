@@ -87,6 +87,11 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | A column named like its own table breaks the qualified matcher: `SELECT comments.* FROM comments WHERE ...` resolves `comments` to the column and raises UNSUPPORTED_METHOD (code 1) — only when a WHERE/ORDER clause is present | Iteration 10 probe |
 | DateTime64 query params reject timezone offsets ("isn't parsed completely", code 457): values must be naive wall-clock strings, so `default_timezone = :local` cannot round-trip | Iteration 10 probe |
 | `RENAME TABLE a TO b` is plain ClickHouse DDL and preserves rows — backs `rename_table` | Iteration 10 live |
+| Mutations (`ALTER TABLE ... UPDATE`, lightweight `DELETE`) report no affected-row count: `X-ClickHouse-Summary` stays all zeros even with `wait_end_of_query=1` + `mutations_sync=1` | Iteration 11 probe |
+| Sorting-key columns are immutable: `ALTER TABLE ... UPDATE id = ...` raises CANNOT_UPDATE_COLUMN (code 420) | Iteration 11 live |
+| A mutation SET value cannot reference the target table's own columns through a correlated subquery — UNKNOWN_IDENTIFIER (code 47); ClickHouse has no correlated subqueries | Iteration 11 live |
+| `ALTER TABLE t MODIFY COLUMN c DEFAULT expr` changes a default without restating the type; `... REMOVE DEFAULT` drops it — backs `change_column_default` | Iteration 11 probe |
+| The legacy analyzer (`enable_analyzer=0`) resolves both the unaliased self-join and the table-named-column qualified matcher that the new analyzer rejects, but still lacks functional-dependency GROUP BY; pinning a deprecated analyzer is not a workaround worth shipping | Iteration 11 probe |
 
 Local corpora:
 
@@ -282,6 +287,23 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     carries NULL (`\N`) and compares against any column type. Typing nil binds by their
     AR column type corrupts silently — an empty `Nullable(String)` param is `''`, not
     NULL — and non-Nullable param types reject the value outright.
+23. **`quoted_date` always encodes UTC** *(Iteration 11)*: DateTime64 stores an epoch and
+    the server parses naive strings in its own timezone (UTC), while params reject
+    offsets outright — so UTC is the only faithful wire encoding. The abstract
+    implementation emits local wall-clock under `default_timezone = :local`, silently
+    shifting every stored instant; the override makes `:local` round-trip correctly.
+24. **Mutation affected-rows are counted client-side** *(Iteration 11)*: the server
+    reports nothing, so `update`/`delete` run `SELECT count()` with the mutation's WHERE
+    just before mutating. One extra cheap query per (already heavyweight) mutation buys
+    Rails semantics: `update_all`/`delete_all` return counts, `update_columns` returns
+    a real boolean, and optimistic locking raises `StaleObjectError` honestly. Rows
+    touched by concurrent writes between count and mutation are not reflected; raw-SQL
+    mutations and LIMIT/ORDER statements fall back to 0.
+25. **No RETURNING means the prefetched pk is the only returning value** *(Iteration 11)*:
+    `return_value_after_insert?` is false for every column (default expressions are
+    server-side and unknowable), and `insert` aligns its returning row to the requested
+    columns so the generated id lands on the pk attribute — previously the first
+    default-function column silently swallowed it.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -409,6 +431,23 @@ map supports explicit nil for id-column tables that must stay pk-less. The upstr
 `comments.comments` column stays out of the slice (qualified-matcher quirk, §2). Harness:
 **636 runs, 0 failures, 87 skips** (13 manifest — 6 GROUP BY, 2 self-join, 3 no-unique-
 constraint, 2 default_timezone :local; 74 capability self-skips). Suite: 238 examples green.
+
+**Phase 6 (cont.) — write-path semantics + persistence_test corpus.** *(landed — Iteration 11)*
+Workaround sweep first: `quoted_date` now always encodes UTC (erased both
+default_timezone :local skips — ledger #23); the legacy-analyzer probe showed self-join
+and qualified-matcher fixes exist but only behind the deprecated analyzer, documented not
+shipped. Then `persistence_test` vendored byte-exact (+12 models incl. `admin/`,
++3 fixture sets, +8 slice tables), which surfaced four real write-path gaps:
+affected rows now counted client-side before each mutation (ledger #24 — makes
+`update_all`/`delete_all` counts, `update_columns` booleans, and optimistic locking
+honest), `return_value_after_insert?` false + returning aligned to the pk (ledger #25 —
+a default-function column was silently swallowing the generated id),
+`next_sequence_value` accepts free-form sequence labels (Oracle legacy, e.g. Rails'
+`companies_nonstd_seq`) and raises clearly for composite pks, and
+`change_column_default` landed on `MODIFY COLUMN ... DEFAULT`/`REMOVE DEFAULT`.
+Harness: **801 runs, 0 failures, 91 skips** (17 manifest — 6 GROUP BY, 2 self-join,
+3 no-unique-constraint, 3 no-autoincrement, 2 immutable-sorting-key, 1 correlated
+subquery; 74 capability self-skips). Suite: 252 examples green.
 
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
