@@ -92,6 +92,13 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | A mutation SET value cannot reference the target table's own columns through a correlated subquery — UNKNOWN_IDENTIFIER (code 47); ClickHouse has no correlated subqueries | Iteration 11 live |
 | `ALTER TABLE t MODIFY COLUMN c DEFAULT expr` changes a default without restating the type; `... REMOVE DEFAULT` drops it — backs `change_column_default` | Iteration 11 probe |
 | The legacy analyzer (`enable_analyzer=0`) resolves both the unaliased self-join and the table-named-column qualified matcher that the new analyzer rejects, but still lacks functional-dependency GROUP BY; pinning a deprecated analyzer is not a workaround worth shipping | Iteration 11 probe |
+| `WITH TOTALS` emits its row out-of-band: `JSONCompact` carries a separate `totals` field and `JSONCompactEachRowWithNamesAndTypes` drops the row entirely; `WITH ROLLUP` delivers totals as ordinary in-band rows | Iteration 12 probe |
+| `group_by_use_nulls=1` keys ROLLUP/CUBE total rows with NULL — except LowCardinality group columns, which keep their type default (`''`/`0`) | Iteration 12 probe |
+| `ORDER BY ... WITH FILL STEP INTERVAL n unit` fills DateTime gaps; `FROM`/`TO` bounds raise INVALID_WITH_FILL_EXPRESSION (code 475) when the literal's type doesn't match the column exactly | Iteration 12 probe |
+| `system.tables` exposes a materialized view's `as_select` and `create_table_query` (TO target parseable); `DROP TABLE` works on views; the stored SQL database-qualifies every identifier | Iteration 12 probe |
+| `async_insert`/`wait_for_async_insert` work as HTTP query params per request; `wait_for_async_insert=1` blocks the ack until the buffer flushes, so the row is immediately readable | Iteration 12 probe |
+| Rails' stock batching shape (`WHERE pk > last ORDER BY pk LIMIT n`) prunes via PrimaryKey binary search per EXPLAIN — no custom find_each needed when pk = sorting key | Iteration 12 probe |
+| `INSERT INTO t (cols) SETTINGS k = v VALUES ...` is valid — SETTINGS sits between the column list and VALUES | Iteration 12 probe |
 
 Local corpora:
 
@@ -305,6 +312,23 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     columns so the generated id lands on the pk attribute — previously the first
     default-function column silently swallowed it.
 
+26. **OLAP totals ride ROLLUP, not WITH TOTALS** *(Iteration 12)*: the totals row is
+    emitted out-of-band (a separate `totals` field in framed JSON formats) and our
+    row-stream wire format drops it entirely, so `.rollup` delivers totals as ordinary
+    rows instead — keyed `nil` via `group_by_use_nulls=1` (except LowCardinality group
+    columns, which keep their type default; documented in the spec).
+
+27. **Materialized views require a TO target** *(Iteration 12)*: inner-storage views hide
+    data in an implicit `.inner` table and `POPULATE` misses rows inserted during the
+    backfill, so `create_materialized_view` refuses both. The dumper reads
+    `system.tables.as_select` + the `TO` clause of `create_table_query`, strips the
+    current-database qualifiers, and emits views after all tables.
+
+28. **Async inserts are connection config with a durable default** *(Iteration 12)*:
+    `async_insert: true` in the database config turns on server-side insert batching for
+    every statement on that connection; `wait_for_async_insert` stays 1 unless explicitly
+    set to 0, because a fire-and-forget ack can lose rows on a server crash.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -449,10 +473,24 @@ Harness: **801 runs, 0 failures, 91 skips** (17 manifest — 6 GROUP BY, 2 self-
 3 no-unique-constraint, 3 no-autoincrement, 2 immutable-sorting-key, 1 correlated
 subquery; 74 capability self-skips). Suite: 252 examples green.
 
+**Phase 7 — OLAP-native surface.** *(landed — Iteration 12)*
+Three tiers, all probed live first. Tier 1 relation sugar on the `extending` seam:
+`group_by_period` (toStartOfInterval buckets, auto-ordered), `.fill(step:)` (WITH FILL on
+the last ORDER BY expression), `.rollup` (in-band totals keyed nil — ledger #26),
+`uniq_count`/`quantile`/`top_k`/`arg_max`/`arg_min` (parametric aggregates with
+Float/Integer coercion as the injection guard), and `estimated_count` (O(1) from
+`system.tables.total_rows`). Tier 2 DDL: `create_materialized_view`/`drop_materialized_view`
+(TO target mandatory — ledger #27) with byte-identical schema.rb round-trip,
+`add/drop/materialize_projection`, `optimize_table(final: true)`. Tier 3 ingestion:
+`async_insert` connection config (durable by default — ledger #28); stock `find_each`
+proven optimal by EXPLAIN and locked in by spec, no custom batching. Deferred:
+-State/-Merge aggregate combinators (until a real consumer asks), projections in
+schema.rb (structure.sql carries them). Suite: 300 examples green; harness unchanged.
+
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
-round-robin with health-aware failover, async insert settings, TLS verification ON by
-default, read-only user support (`prevent_writes` integration).
+round-robin with health-aware failover, TLS verification ON by default, read-only user
+support (`prevent_writes` integration).
 
 **Phase 9 — Real-world integration + release.**
 Swap TRMNL core's telemetry sink (`AnalyticsRecord`, `docker-compose.clickhouse.yml`,

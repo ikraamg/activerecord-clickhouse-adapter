@@ -1,15 +1,14 @@
-# Iteration 12: relations_test corpus (query-composition semantics at scale)
+# Iteration 13: relations_test corpus (query-composition semantics at scale)
 
-> Status at handoff: 252 rspec examples green (incl. the rails-compat harness: 801
+> Status at handoff: 300 rspec examples green (plus the rails-compat harness: 801
 > upstream minitest runs, 0 failures, 91 skips — 17 manifest, 74 capability self-skips),
-> rubocop clean. Iteration 11 landed the UTC-always `quoted_date` (decision #23 — erased
-> both default_timezone :local skips), client-side affected-row counts for mutations
-> (decision #24 — update_all/delete_all counts, update_columns booleans, and optimistic
-> locking now honest), the returning/write-back fix (decision #25 — a default-function
-> column was swallowing the generated pk), free-form sequence labels in
-> next_sequence_value (Oracle legacy, `companies_nonstd_seq`), `change_column_default`
-> (MODIFY COLUMN ... DEFAULT / REMOVE DEFAULT), and the persistence_test corpus
-> (+12 models incl. `admin/`, +3 fixture sets, +8 slice tables).
+> rubocop clean. Iteration 12 landed the OLAP-native surface in three tiers (PLAN.md §6
+> Phase 7, ledger #26–#28): relation sugar (`group_by_period`, `.fill(step:)`, `.rollup`,
+> `uniq_count`/`quantile`/`top_k`/`arg_max`/`arg_min`, `estimated_count`), pre-aggregation
+> DDL (`create_materialized_view` with mandatory TO target + byte-identical dumper
+> round-trip, `add/drop/materialize_projection`, `optimize_table`), and ingestion
+> ergonomics (`async_insert` connection config, durable by default; stock `find_each`
+> proven sorting-key-optimal by EXPLAIN and locked in by spec).
 
 ## Scope
 
@@ -37,9 +36,10 @@
   record's id can never work; skip with that reason.
 - ClickHouse has no correlated subqueries: mutation SET values referencing the target
   table's own columns raise UNKNOWN_IDENTIFIER (code 47).
-- The legacy analyzer (`enable_analyzer=0`) would fix the self-join and
-  qualified-matcher skips but is deprecated — decision made in Iteration 11 not to
-  pin it. Don't revisit without new server-side evidence.
+- `.rollup` totals are keyed `nil` except for LowCardinality group columns, which keep
+  their type default (`''`) — group_by_use_nulls doesn't null them (ledger #26).
+- OLAP deferrals from Iteration 12: -State/-Merge aggregate combinators (wait for a real
+  consumer), projections in schema.rb (structure.sql carries them today).
 - Fixture YAMLs with ERB (`<%= %>`) evaluate in the harness — keep the vendored files
   byte-exact and let them run.
 
@@ -47,4 +47,4 @@
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries (and shrank where workarounds landed),
-this file rewritten for Iteration 13.
+this file rewritten for Iteration 14.

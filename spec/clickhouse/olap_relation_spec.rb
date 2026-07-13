@@ -95,6 +95,27 @@ RSpec.describe "ClickHouse OLAP relation extensions" do
       counts = model.group(:device_id, :event_type).rollup.count
       expect(counts[[0, nil]]).to eq(7)
     end
+
+    # group_by_use_nulls does not null LowCardinality keys (probed 2026-07-13): the
+    # total row keeps the type default. Documented, not hidden — callers grouping by
+    # LowCardinality columns must fetch the empty-string key.
+    it "keys totals with the type default for LowCardinality group columns" do
+      connection = ActiveRecord::Base.lease_connection
+      connection.create_table("olap_lc_probe", force: true, order: "kind") do |t|
+        t.string :kind, low_cardinality: true
+      end
+      connection.execute("INSERT INTO olap_lc_probe VALUES ('a'), ('a'), ('b')")
+      lc_model = Class.new(ActiveRecord::Base) do
+        include ActiveRecord::ConnectionAdapters::ClickHouse::Querying
+
+        self.table_name = "olap_lc_probe"
+
+        def self.name = "OlapLcProbe"
+      end
+      expect(lc_model.group(:kind).rollup.count.fetch("")).to eq(3)
+    ensure
+      ActiveRecord::Base.lease_connection.drop_table("olap_lc_probe", if_exists: true)
+    end
   end
 
   describe "approximate aggregates" do

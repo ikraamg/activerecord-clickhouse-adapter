@@ -67,6 +67,27 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(model.group(:device_id).count).to eq(1 => 2, 2 => 1)
   end
 
+  it "buckets a time series by hour" do
+    series = model.group_by_period(:hour, :ts).count
+    expect(series[Time.utc(2026, 7, 1, 9)]).to eq(2)
+  end
+
+  it "adds a grand-total row via rollup" do
+    expect(model.group(:device_id).rollup.count.fetch(nil)).to eq(3)
+  end
+
+  it "answers percentiles server-side" do
+    expect(model.quantile(1.0, :duration_ms)).to eq(120)
+  end
+
+  it "answers the dominant event type via top_k" do
+    expect(model.top_k(1, :event_type)).to eq(["render"])
+  end
+
+  it "estimates the table's row count from metadata" do
+    expect(model.estimated_count).to eq(3)
+  end
+
   it "emits sql.active_record notifications for relation queries" do
     payloads = []
     callback = ->(event) { payloads << event.payload[:sql] }
