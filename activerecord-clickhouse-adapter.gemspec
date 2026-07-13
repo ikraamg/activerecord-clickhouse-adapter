@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
-require_relative "lib/active_record/connection_adapters/clickhouse/gem_version"
-
+# No require_relative here: Bundler evaluates this file at bundler/setup time for path/git
+# consumers, and defining any ActiveRecord constant that early clobbers active_record.rb's
+# `autoload :ConnectionAdapters` (proven in spec/clickhouse/gem_version_spec.rb).
 Gem::Specification.new do |spec|
   spec.name = "activerecord-clickhouse-adapter"
-  spec.version = ActiveRecord::ConnectionAdapters::ClickHouse::VERSION
+  spec.version = "0.1.0"
   spec.authors = ["Ikraam Ghoor"]
   spec.summary = "ClickHouse database adapter for Active Record"
   spec.description = "A fully featured Active Record adapter for ClickHouse: native types, " \
