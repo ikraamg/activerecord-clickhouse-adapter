@@ -72,8 +72,9 @@ Naming/MethodName:
     - lib/active_record/connection_adapters/clickhouse/schema_definitions.rb
     - lib/arel/visitors/clickhouse.rb
 
+# pk is Rails' own parameter name in the DatabaseStatements#insert contract.
 Naming/MethodParameterName:
-  AllowedNames: [o, as, at, by, db, id, in, io, ip, of, on, os, pp, to]
+  AllowedNames: [o, as, at, by, db, id, in, io, ip, of, on, os, pk, pp, to]
 
 Naming/AccessorMethodName:
   Exclude:

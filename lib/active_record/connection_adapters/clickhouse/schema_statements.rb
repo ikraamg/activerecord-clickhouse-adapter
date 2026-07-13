@@ -218,7 +218,7 @@ module ActiveRecord
           expression = field["default_expression"]
           case expression
           when /\A'(.*)'\z/m then [unescape_string_literal(Regexp.last_match(1)), nil]
-          when /\A-?\d+(?:\.\d+)?\z/ then [expression, nil]
+          when /\A-?\d+(?:\.\d+)?\z/, "true", "false" then [expression, nil]
           else [nil, expression]
           end
         end

@@ -11,6 +11,7 @@ RSpec.describe "ClickHouse schema statements" do
         ts        DateTime64(3, 'UTC') DEFAULT now64(3),
         note      Nullable(String),
         tag       LowCardinality(String) DEFAULT 'none',
+        active    Bool DEFAULT true,
         INDEX idx_note note TYPE bloom_filter GRANULARITY 4
       )
       ENGINE = MergeTree
@@ -69,6 +70,18 @@ RSpec.describe "ClickHouse schema statements" do
   it "captures literal defaults as values" do
     tag = connection.columns("schema_probe").find { |column| column.name == "tag" }
     expect(tag.default).to eq("none")
+  end
+
+  # A boolean default is a literal, not a function: auto_populated? must stay false
+  # or Rails asks for the column back via RETURNING (which ClickHouse lacks).
+  it "captures boolean defaults as cast values" do
+    active = connection.columns("schema_probe").find { |column| column.name == "active" }
+    expect(active.default).to be(true)
+  end
+
+  it "leaves boolean defaults out of default_function" do
+    active = connection.columns("schema_probe").find { |column| column.name == "active" }
+    expect(active.default_function).to be_nil
   end
 
   it "lists data skipping indexes" do

@@ -20,32 +20,3 @@ CalculationsTest:
   test_pluck_with_qualified_name_on_loaded: >-
     self-join with unaliased base table raises AMBIGUOUS_IDENTIFIER
 
-  # ClickHouse has no autoincrement or INSERT ... RETURNING: create! without an explicit
-  # id stores the column default (0) and the record's id stays nil, so tests that read
-  # back a server-assigned id cannot pass. Client-side id generation (snowflake/UUIDv7
-  # via prefetch_primary_key?) is an open design question in PLAN.md.
-  test_ids_on_relation: no autoincrement — create! without explicit id returns id nil
-  test_pluck_in_relation: no autoincrement — create! without explicit id returns id nil
-  test_pluck_with_serialization: no autoincrement — create! without explicit id returns id nil
-  test_pluck_auto_table_name_prefix: no autoincrement — create! without explicit id returns id nil
-  test_pluck_if_table_included: no autoincrement — create! without explicit id returns id nil
-  test_pluck_not_auto_table_name_prefix_if_column_joined: >-
-    no autoincrement — create! without explicit id returns id nil
-  test_pluck_not_auto_table_name_prefix_if_column_included: >-
-    no autoincrement — create! without explicit id returns id nil
-  test_pluck_with_multiple_columns_and_includes: >-
-    no autoincrement — create! without explicit id returns id nil
-  test_pluck_joined_with_polymorphic_relation: >-
-    no autoincrement — create! without explicit id returns id nil
-  test_ids_with_polymorphic_relation_join: no autoincrement — create! without explicit id returns id nil
-  test_calculation_with_polymorphic_relation: no autoincrement — create! without explicit id returns id nil
-  test_grouped_calculation_with_polymorphic_relation: >-
-    no autoincrement — create! without explicit id returns id nil
-  test_should_calculate_against_given_relation: >-
-    no autoincrement — create! without explicit id returns id nil
-  test_sum_with_not_auto_table_name_prefix_if_column_included: >-
-    no autoincrement — create! without explicit id returns id nil
-  test_maximum_with_not_auto_table_name_prefix_if_column_included: >-
-    no autoincrement — create! without explicit id returns id nil
-  test_minimum_with_not_auto_table_name_prefix_if_column_included: >-
-    no autoincrement — create! without explicit id returns id nil

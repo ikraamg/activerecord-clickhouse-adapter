@@ -46,8 +46,8 @@ module ARCompat
       connection.create_table :audit_logs, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :message
-        t.integer :developer_id
-        t.integer :unvalidated_developer_id, null: true
+        t.integer :developer_id, limit: 8
+        t.integer :unvalidated_developer_id, limit: 8, null: true
       end
 
       connection.create_table :author_addresses, force: true, order: "id" do |t|
@@ -61,14 +61,14 @@ module ARCompat
         t.integer :author_address_extra_id, limit: 8, null: true
         t.string :organization_id, null: true
         t.string :owned_essay_id, null: true
-        t.integer :published_author_id, null: true
+        t.integer :published_author_id, limit: 8, null: true
       end
 
       connection.create_table :books, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :author_id, limit: 8, null: true
         t.string :format, null: true
-        t.integer :format_record_id, null: true
+        t.integer :format_record_id, limit: 8, null: true
         t.string :format_record_type, null: true
         t.string :name, null: true
         t.integer :status, null: true, default: 0
@@ -96,25 +96,25 @@ module ARCompat
       connection.create_table :clubs, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
-        t.integer :category_id, null: true
+        t.integer :category_id, limit: 8, null: true
       end
 
       connection.create_table :comments, force: true, order: "id" do |t|
         t.integer :id, limit: 8
-        t.integer :post_id
+        t.integer :post_id, limit: 8
         t.string :body
         t.string :type, null: true
         t.integer :label, null: true, default: 0
         t.integer :tags_count, null: true, default: 0
         t.integer :children_count, null: true, default: 0
-        t.integer :parent_id, null: true
+        t.integer :parent_id, limit: 8, null: true
         t.integer :author_id, limit: 8, null: true
         t.string :author_type, null: true
         t.string :resource_id, null: true
         t.string :resource_type, null: true
-        t.integer :origin_id, null: true
+        t.integer :origin_id, limit: 8, null: true
         t.string :origin_type, null: true
-        t.integer :developer_id, null: true
+        t.integer :developer_id, limit: 8, null: true
         t.datetime :updated_at, precision: 6, null: true
         t.datetime :deleted_at, precision: 6, null: true
         t.integer :comments, null: true
@@ -129,7 +129,7 @@ module ARCompat
         t.string :name, null: true
         t.integer :client_of, limit: 8, null: true
         t.integer :rating, limit: 8, null: true, default: 1
-        t.integer :account_id, null: true
+        t.integer :account_id, limit: 8, null: true
         t.string :description, null: true, default: ""
         t.integer :status, null: true, default: 0
       end
@@ -147,14 +147,14 @@ module ARCompat
         t.integer :id, limit: 8
         t.string :title, null: true
         t.integer :revision, null: true
-        t.integer :order_id, null: true
-        t.integer :shop_id, null: true
+        t.integer :order_id, limit: 8, null: true
+        t.integer :shop_id, limit: 8, null: true
       end
 
       connection.create_table :cpk_chapters, force: true, order: "(author_id, id)" do |t|
         t.integer :author_id, limit: 8
         t.integer :id, limit: 8
-        t.integer :book_id, null: true
+        t.integer :book_id, limit: 8, null: true
         t.string :title, null: true
       end
 
@@ -164,7 +164,7 @@ module ARCompat
         t.string :first_name, null: true
         t.integer :salary, null: true, default: 70_000
         t.integer :firm_id, limit: 8, null: true
-        t.integer :mentor_id, null: true
+        t.integer :mentor_id, limit: 8, null: true
         t.datetime :legacy_created_at, precision: 6, null: true
         t.datetime :legacy_updated_at, precision: 6, null: true
         t.datetime :legacy_created_on, precision: 6, null: true
@@ -172,8 +172,8 @@ module ARCompat
       end
 
       connection.create_table :edges, force: true, order: "(source_id, sink_id)" do |t|
-        t.integer :source_id
-        t.integer :sink_id
+        t.integer :source_id, limit: 8
+        t.integer :sink_id, limit: 8
       end
 
       connection.create_table :having, force: true, order: "id" do |t|
@@ -226,14 +226,14 @@ module ARCompat
 
       connection.create_table :ratings, force: true, order: "id" do |t|
         t.integer :id, limit: 8
-        t.integer :comment_id, null: true
+        t.integer :comment_id, limit: 8, null: true
         t.integer :value, null: true
       end
 
       connection.create_table :ship_parts, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
-        t.integer :ship_id, null: true
+        t.integer :ship_id, limit: 8, null: true
         t.datetime :updated_at, precision: 6, null: true
       end
 
@@ -257,7 +257,7 @@ module ARCompat
         t.boolean :approved, null: true, default: true
         t.integer :replies_count, null: true, default: 0
         t.integer :unique_replies_count, null: true, default: 0
-        t.integer :parent_id, null: true
+        t.integer :parent_id, limit: 8, null: true
         t.string :parent_title, null: true
         t.string :type, null: true
         t.string :group, null: true

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "date"
+require "securerandom"
 require "strscan"
 
 module ActiveRecord
@@ -37,6 +38,40 @@ module ActiveRecord
           end
         end
 
+        # No autoincrement and no INSERT ... RETURNING: primary keys are generated
+        # client-side before the INSERT (the Oracle-adapter prefetch seam), but only
+        # for tables whose sorting key is a single generatable column — Rails'
+        # prefetch path cannot handle composite primary keys.
+        def prefetch_primary_key?(table_name = nil)
+          !table_name.nil? && !generatable_primary_key(table_name).nil?
+        end
+
+        # The "sequence" is the pk column itself; encode table.column so
+        # next_sequence_value can check it against the sorting key. Composite keys
+        # have no single column to generate.
+        def default_sequence_name(table_name, column_name)
+          return nil if column_name.is_a?(Array)
+
+          "#{table_name}.#{column_name}"
+        end
+
+        def next_sequence_value(sequence_name)
+          table_name, column_name = sequence_name.to_s.split(".", 2)
+          generatable_column, sql_type = table_name && generatable_primary_key(table_name)
+          raise_ungeneratable_primary_key(sequence_name) unless generatable_column == column_name
+
+          sql_type == "UUID" ? generate_uuid_v7 : generate_time_ordered_id
+        end
+
+        # No INSERT ... RETURNING in ClickHouse: the prefetched client-side id is the
+        # only post-insert-knowable value, so surface it as the returning row that
+        # _create_record writes back onto the record. The signature is Rails'
+        # DatabaseStatements#insert contract.
+        def insert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [], returning: nil) # rubocop:disable Metrics/ParameterLists
+          inserted_id = super(arel, name, pk, id_value, sequence_name, binds, returning: nil)
+          returning.nil? ? inserted_id : [inserted_id]
+        end
+
         # The abstract version wraps bare DELETEs in a transaction; ClickHouse has
         # neither, so fixtures load as TRUNCATE + batched INSERTs.
         def insert_fixtures_set(fixture_set, tables_to_delete = [])
@@ -48,6 +83,58 @@ module ActiveRecord
         end
 
         private
+
+        GENERATABLE_ID_TYPES = /\A(?:U?Int(?:64|128|256)|UUID)\z/
+        private_constant :GENERATABLE_ID_TYPES
+
+        SORTING_KEY_COLUMN_SQL = <<~SQL.squish
+          SELECT columns.name AS name, columns.type AS type
+          FROM system.tables AS tables
+          INNER JOIN system.columns AS columns
+            ON columns.database = tables.database
+            AND columns.table = tables.name
+            AND columns.name = tables.sorting_key
+          WHERE tables.database = currentDatabase() AND tables.name = %s
+        SQL
+        private_constant :SORTING_KEY_COLUMN_SQL
+
+        # [column_name, sql_type] when the table's sorting key is one column typed
+        # widely enough to hold a generated id; nil otherwise (composite keys,
+        # expression keys, narrow integers, strings).
+        def generatable_primary_key(table_name)
+          row = select_one(format(SORTING_KEY_COLUMN_SQL, quote(table_name.to_s)), "SCHEMA")
+          return nil unless row && GENERATABLE_ID_TYPES.match?(row["type"])
+
+          [row["name"], row["type"]]
+        end
+
+        RANDOM_ID_BITS = 22
+        private_constant :RANDOM_ID_BITS
+
+        # 41 bits of Unix milliseconds + 22 random bits = 63 bits: time-ordered like
+        # UUIDv7 and safely inside signed Int64 until the year 4707.
+        def generate_time_ordered_id
+          milliseconds = Process.clock_gettime(Process::CLOCK_REALTIME, :millisecond)
+          (milliseconds << RANDOM_ID_BITS) | SecureRandom.random_number(1 << RANDOM_ID_BITS)
+        end
+
+        # SecureRandom.uuid_v7 needs Ruby >= 3.3; build the same layout on 3.2:
+        # 48-bit millisecond timestamp, version nibble 7, variant bits 10.
+        def generate_uuid_v7
+          return SecureRandom.uuid_v7 if SecureRandom.respond_to?(:uuid_v7)
+
+          milliseconds = Process.clock_gettime(Process::CLOCK_REALTIME, :millisecond)
+          hex = format("%<ms>012x", ms: milliseconds) + SecureRandom.hex(10)
+          hex[12] = "7"
+          hex[16] = %w[8 9 a b].fetch(hex[16].to_i(16) & 0x3)
+          hex.insert(20, "-").insert(16, "-").insert(12, "-").insert(8, "-")
+        end
+
+        def raise_ungeneratable_primary_key(sequence_name)
+          raise ActiveRecordError, "cannot generate a primary key for #{sequence_name.inspect}: " \
+                                   "the table's sorting key must be that single column, typed " \
+                                   "at least 64 bits wide or UUID; assign ids explicitly instead"
+        end
 
         def perform_query(raw_connection, sql, binds, type_casted_binds, prepare:, notification_payload:, batch:) # rubocop:disable Lint/UnusedMethodArgument
           sql, params = materialize_query_params(sql, binds, type_casted_binds)

@@ -118,6 +118,25 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(stats.last).to include(written_rows: 2)
   end
 
+  it "creates and finds records through a generated primary key" do
+    audit_model = Class.new(ActiveRecord::Base) do
+      self.table_name = "spine_audits"
+      self.primary_key = "id"
+
+      def self.name = "SpineAudit"
+    end
+    connection = ActiveRecord::Base.lease_connection
+    connection.drop_table("spine_audits", if_exists: true)
+    connection.create_table("spine_audits", order: "id") do |t|
+      t.integer :id, limit: 8
+      t.string :action, default: ""
+    end
+    record = audit_model.create!(action: "deploy")
+    expect(audit_model.find(record.id).action).to eq("deploy")
+  ensure
+    ActiveRecord::Base.lease_connection.drop_table("spine_audits", if_exists: true)
+  end
+
   it "survives a schema dump, reload, and re-query round trip" do
     ActiveRecord::SchemaDumper.ignore_tables = [->(table) { table != "spine_events" }]
     dump = ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection_pool, StringIO.new).string
