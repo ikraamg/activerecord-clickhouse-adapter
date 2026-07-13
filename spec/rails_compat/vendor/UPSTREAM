@@ -6,6 +6,7 @@ Vendored from rails/rails tag v8.1.3 (activerecord/test/), byte-exact:
 - cases/calculations_test.rb
 - cases/insert_all_test.rb
 - cases/finder_test.rb
+- cases/persistence_test.rb
 - models/* (every model the vendored cases require)
 - fixtures/* (every fixture set the vendored cases declare)
 - support/async_helper.rb, support/stubs/strong_parameters.rb

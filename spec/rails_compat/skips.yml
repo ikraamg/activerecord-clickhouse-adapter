@@ -26,6 +26,23 @@ FinderTest:
   test_joins_dont_clobber_id: >-
     self-join with unaliased base table raises AMBIGUOUS_IDENTIFIER
 
+PersistenceTest:
+  # ClickHouse has no autoincrement: nothing populates an id column the client did
+  # not send, and Column#auto_populated? is only true for DEFAULT expressions.
+  test_populates_non_primary_key_autoincremented_column: >-
+    no autoincrement — an unsent id column stays at its type default
+  test_populates_autoincremented_id_pk_regardless_of_its_position_in_columns_list: >-
+    no autoincrement — the table cannot have two auto-populated columns
+  test_populates_non_primary_key_autoincremented_column_for_a_cpk_model: >-
+    Rails' prefetch seam cannot populate one column of a composite primary key
+  # Sorting-key columns are immutable in ClickHouse (CANNOT_UPDATE_COLUMN, code 420).
+  test_update: >-
+    changing a record's id means mutating the sorting-key column (CANNOT_UPDATE_COLUMN)
+  test_update_columns_changing_id: >-
+    changing a record's id means mutating the sorting-key column (CANNOT_UPDATE_COLUMN)
+  test_update_all_with_custom_sql_as_value: >-
+    correlated subquery in a mutation SET raises UNKNOWN_IDENTIFIER (no correlated subqueries)
+
 InsertAllTest:
   # These three exercise semantics ClickHouse does not have: unique constraints and
   # ON CONFLICT handling. The adapter raises honestly from insert_all/upsert_all

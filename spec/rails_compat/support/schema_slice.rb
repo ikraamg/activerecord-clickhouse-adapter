@@ -22,13 +22,15 @@ module ARCompat
     # Tables the harness must reset between tests beyond the fixture tables, which
     # reload every test anyway (decision #15: truncation, no transactions to roll back).
     TABLES = %w[
-      1_need_quoting accounts audit_logs author_addresses authors books cars carts
+      1_need_quoting accounts admin_users aircraft audit_logs author_addresses authors
+      auto_id_tests books cars carts
       categories categories_posts categorizations clothing_items clubs comments companies computers
       computers_developers contracts
-      cpk_books cpk_chapters cpk_reviews customers developers developers_projects
-      dog_lovers dogs edges entrants having mateys minivans non_primary_keys
-      numeric_data organizations posts projects ratings ship_parts ships speedometers
-      subscribers subscriptions taggings tags tires topics
+      cpk_books cpk_chapters cpk_orders cpk_reviews customers dashboards developers
+      developers_projects
+      dog_lovers dogs edges entrants having mateys minimalistics minivans non_primary_keys
+      numeric_data organizations parrots people posts projects ratings ship_parts ships
+      speedometers subscribers subscriptions taggings tags tires topics
       toooooooooooooooooooooooooooooooooo_long_table_names toys treasures
     ].freeze
 
@@ -50,11 +52,42 @@ module ARCompat
         t.datetime :updated_at, precision: 6, null: true
       end
 
+      connection.create_table :admin_users, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.string :settings, null: true
+        t.string :parent, null: true
+        t.string :spouse, null: true
+        t.string :configs, null: true
+        t.string :preferences, null: true, default: ""
+        t.string :json_data, null: true
+        t.string :json_data_empty, null: true, default: ""
+        t.string :params, null: true
+        t.integer :account_id, limit: 8, null: true
+        t.json :json_options, null: true
+      end
+
+      connection.create_table :aircraft, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :wheels_count, default: 0
+        t.datetime :wheels_owned_at, precision: 6, null: true
+        t.datetime :manufactured_at, precision: 6, default: -> { "now64(6)" }
+      end
+
       connection.create_table :audit_logs, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :message
         t.integer :developer_id, limit: 8
         t.integer :unvalidated_developer_id, limit: 8, null: true
+      end
+
+      # Upstream's table has two auto-populated columns (autoincrement pk + default
+      # function); here only the default function qualifies — see skips.yml.
+      connection.create_table :auto_id_tests, force: true, order: "auto_id" do |t|
+        t.integer :auto_id, limit: 8
+        t.integer :value, null: true
+        t.datetime :published_at, precision: 6, default: -> { "now64(6)" }
       end
 
       connection.create_table :author_addresses, force: true, order: "id" do |t|
@@ -235,6 +268,13 @@ module ARCompat
         t.datetime :updated_at, precision: 6, null: true
       end
 
+      connection.create_table :cpk_orders, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :shop_id, limit: 8, null: true
+        t.string :status, null: true
+        t.integer :books_count, null: true, default: 0
+      end
+
       connection.create_table :cpk_reviews, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :author_id, limit: 8, null: true
@@ -271,6 +311,11 @@ module ARCompat
         t.integer :project_id, limit: 8
         t.date :joined_on, null: true
         t.integer :access_level, null: true, default: 1
+      end
+
+      connection.create_table :dashboards, force: true, order: "dashboard_id" do |t|
+        t.string :dashboard_id
+        t.string :name, null: true
       end
 
       connection.create_table :dog_lovers, force: true, order: "id" do |t|
@@ -310,6 +355,11 @@ module ARCompat
         t.integer :weight, null: true
       end
 
+      connection.create_table :minimalistics, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :expires_at, limit: 8, null: true
+      end
+
       connection.create_table :minivans, force: true, order: "minivan_id" do |t|
         t.string :minivan_id
         t.string :name, null: true
@@ -343,6 +393,39 @@ module ARCompat
       connection.create_table :organizations, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
+      end
+
+      connection.create_table :parrots, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :breed, null: true, default: 0
+        t.string :color, null: true
+        t.string :parrot_sti_class, null: true
+        t.integer :killer_id, limit: 8, null: true
+        t.integer :updated_count, null: true, default: 0
+        t.datetime :created_at, precision: 0, null: true
+        t.datetime :created_on, precision: 0, null: true
+        t.datetime :updated_at, precision: 0, null: true
+        t.datetime :updated_on, precision: 0, null: true
+      end
+
+      connection.create_table :people, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :first_name
+        t.integer :primary_contact_id, limit: 8, null: true
+        t.string :gender, null: true
+        t.integer :number1_fan_id, limit: 8, null: true
+        t.integer :lock_version, default: 0
+        t.string :comments, null: true
+        t.integer :followers_count, default: 0
+        t.integer :friends_too_count, default: 0
+        t.integer :best_friend_id, limit: 8, null: true
+        t.integer :best_friend_of_id, limit: 8, null: true
+        t.integer :insures, default: 0
+        t.datetime :born_at, precision: 6, null: true
+        t.integer :cars_count, default: 0
+        t.datetime :created_at, precision: 6
+        t.datetime :updated_at, precision: 6
       end
 
       connection.create_table :posts, force: true, order: "id" do |t|
