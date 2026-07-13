@@ -78,7 +78,11 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | Self-join with an unaliased base table (`FROM topics JOIN topics AS replies_topics ON ...`) raises AMBIGUOUS_IDENTIFIER (code 207) | Iteration 8 live |
 | Database-level DDL error codes verified live: 82 DATABASE_ALREADY_EXISTS, 81 UNKNOWN_DATABASE | Iteration 8 live |
 | Rails' default `insert_fixtures_set` issues bare `DELETE FROM t` (syntax error here) inside a transaction; the adapter overrides it with TRUNCATE + per-table batched INSERTs | Iteration 8 live |
-| `create!` without an explicit id stores the column default (0) and leaves the AR object's id nil — no autoincrement, no `INSERT ... RETURNING`; client-side id generation is an open question (§9) | Iteration 8 live |
+| `create!` without an explicit id stores the column default (0) and leaves the AR object's id nil — no autoincrement, no `INSERT ... RETURNING`; solved by client-side prefetch (decision #18) | Iteration 8 live |
+| Rails always requests the primary key back via `returning:` (`_returning_columns_for_insert` falls back to `Array(primary_key)`), so `#insert` must surface the prefetched id as the returning row or `create!` leaves id nil | Iteration 9 live |
+| A boolean column default (`DEFAULT true`) arrives in `system.columns.default_expression` as the bare token `true`; classifying it as a default_function made `Column#auto_populated?` true and broke the pk write-back (Rails asked RETURNING for it) | Iteration 9 live |
+| VALUES-section coercion: a `now64(6)` expression (internally Decimal64) raises TYPE_MISMATCH (code 53) against Date32 columns, and even `toString(now64(6))` will not parse into Date32; only plain `now()` (DateTime) coerces into both Date32 and DateTime64 targets | Iteration 9 probe |
+| Sorting keys reject Nullable columns by default (`allow_nullable_key` off, ILLEGAL_COLUMN code 44) — schema-slice tables keyed on foreign keys must keep those columns non-nullable | Iteration 9 live |
 
 Local corpora:
 
@@ -252,6 +256,18 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
 18. **Adapter returns plain `Time`** *(Iteration 8)*: the DateTime caster yields `Time`
     instances (UTC instants), matching every built-in adapter's database layer;
     `TimeWithZone` wrapping stays in the attribute layer where Rails puts it.
+19. **Client-side primary key prefetch** *(Iteration 9, approved by Ikraam)*: the adapter
+    generates ids before INSERT via Rails' Oracle-era seam (`prefetch_primary_key?` /
+    `next_sequence_value`), but only when the table's sorting key is a single column
+    typed ≥64-bit integer (time-ordered 63-bit id: 41 bits of Unix ms + 22 random bits)
+    or UUID (UUIDv7). Composite/expression/narrow/string keys never prefetch — those
+    models assign ids explicitly, and a mismatched model pk raises with guidance rather
+    than silently inserting a zero. `#insert` surfaces the prefetched id as the
+    RETURNING row because ClickHouse has no `INSERT ... RETURNING`.
+20. **`high_precision_current_timestamp` is `now()`** *(Iteration 9)*: Rails stamps both
+    date (`*_on`) and datetime (`*_at`) attributes with this single expression in
+    `insert_all`, and only a plain DateTime coerces into both Date32 and DateTime64
+    VALUES targets — so bulk-insert timestamps carry second precision.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -356,6 +372,17 @@ DateTimeCaster, datetime precision 6 in the slice. **273 runs, 0 failures, 24 sk
 — every skip categorized in `skips.yml`: 5 functional-dependency GROUP BY, 1 self-join
 ambiguity, 16 no-autoincrement (decision #14), 2 upstream-conditional.
 
+**Phase 6 (cont.) — client-side primary keys + insert_all_test corpus.** *(landed — Iteration 9)*
+Client-side pk prefetch (decision #19) erased all 16 no-autoincrement skips; `#insert`
+surfaces the prefetched id as the RETURNING row; boolean literal defaults reclassified so
+`auto_populated?` stays honest. `insert_all_test` vendored byte-exact (+4 models, +4
+slice tables incl. a composite-sorting-key carts); helper shim grew upstream's
+capability-predicate delegation (`supports_insert_returning?` et al.), so unsupported
+upsert/conflict tests self-skip exactly as upstream intends;
+`high_precision_current_timestamp` now stamps `record_timestamps` bulk inserts. Harness:
+**362 runs, 0 failures, 83 skips** (9 manifest — 5 GROUP BY, 1 self-join, 3 no-unique-
+constraint semantics; 74 capability self-skips). Suite: 227 examples green.
+
 **Phase 8 — Production hardening.**
 Cluster/`ON CLUSTER` DDL, Replicated/Distributed engine support in the DSL, multi-replica
 round-robin with health-aware failover, async insert settings, TLS verification ON by
@@ -395,12 +422,12 @@ prod-like docker sandbox e2e. README (ankane style), CHANGELOG, CI matrix
   permanently manifest-skipped. Acceptable: the manifest documents the database's honest
   semantics. *(Resolved Iteration 8: TRUNCATE-based `insert_fixtures_set` override,
   `use_transactional_tests = false` in the shim — calculations_test runs clean.)*
-- **Client-side primary-key generation** (open, for Ikraam): 16 calculations_test skips
-  trace to `create!` without an explicit id leaving id=0/nil. Options: (a) adapter-level
-  `prefetch_primary_key?` + `next_sequence_value` generating UUIDv7/snowflake ids for
-  models that opt in, (b) a harness-only `before_create` shim (keeps the adapter honest,
-  compat suite stays skipped), (c) document "bring your own id" as the contract.
-  ecto_ch does (c); the incumbent gem silently returns id 0.
+- **Client-side primary-key generation** *(resolved Iteration 9, option (a) approved by
+  Ikraam — decision #19)*: adapter-level prefetch generates time-ordered Int64 or UUIDv7
+  ids when the sorting key is one generatable column; all 16 related calculations_test
+  skips now pass. Residual cost: one `system.tables` SCHEMA query per `create!`
+  (Rails does not cache `prefetch_primary_key?` per model) — candidate for caching if
+  insert-path profiling ever flags it.
 - **RowBinary in pure Ruby** may not beat Oj/JSON parsing for string-heavy sets — that's why
   the codec is pluggable and benchmark-gated; a native extension is explicitly out of scope
   until pure Ruby is proven insufficient.
