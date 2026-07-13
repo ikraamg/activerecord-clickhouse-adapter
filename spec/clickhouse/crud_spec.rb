@@ -32,9 +32,12 @@ RSpec.describe "ClickHouse CRUD semantics" do
   end
 
   describe "bulk insert" do
-    it "raises honestly for insert_all (no duplicate-skip semantics in ClickHouse)" do
-      expect { model.insert_all([{ device_id: 1 }]) }
-        .to raise_error(ArgumentError, /does not support skipping duplicates/)
+    # insert_all implies skip-duplicates; without unique constraints nothing can
+    # conflict, so the semantics hold vacuously and the INSERT goes through plain
+    # (decided porting TRMNL core, whose telemetry sink writes with insert_all).
+    it "treats insert_all's duplicate-skip as vacuously satisfied" do
+      model.insert_all([{ device_id: 1 }, { device_id: 1 }])
+      expect(model.count).to eq(2)
     end
 
     it "inserts all rows in one statement" do

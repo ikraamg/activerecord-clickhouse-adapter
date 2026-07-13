@@ -167,12 +167,18 @@ DeprecatedBelongsToAssociationsTest:
   test_reset_<association>: *raw_update_without_where
 
 InsertAllTest:
-  # These three exercise semantics ClickHouse does not have: unique constraints and
-  # ON CONFLICT handling. The adapter raises honestly from insert_all/upsert_all
-  # (supports_insert_on_duplicate_* and supports_insert_returning? are all false).
-  test_insert_all_raises_on_duplicate_records: >-
-    no unique constraints — duplicate rows insert cleanly, RecordNotUnique never raises
-  test_insert_all_implicitly_sets_primary_keys_when_nil: >-
-    plain insert_all implies duplicate-skip, which the adapter honestly rejects
+  # These exercise semantics ClickHouse does not have: unique constraints and
+  # ON CONFLICT update handling. insert_all's duplicate-skip is vacuously satisfied
+  # (nothing can conflict, so duplicates insert instead of being skipped);
+  # upsert_all still raises honestly.
+  test_insert_all_raises_on_duplicate_records: &no_unique_constraints >-
+    no unique constraints — duplicate rows insert cleanly instead of being skipped
+  test_insert_all_can_skip_duplicate_records: *no_unique_constraints
+  test_skip_duplicates_strategy_does_not_secretly_upsert: *no_unique_constraints
+  test_insert_all_with_skip_duplicates_and_autonumber_id_given: *no_unique_constraints
+  test_insert_all_with_skip_duplicates_and_autonumber_id_not_given: *no_unique_constraints
+  test_insert: &no_upsert >-
+    upsert needs conflict semantics, which the adapter honestly rejects
+  test_insert_all_and_upsert_all_works_with_composite_primary_keys_when_unique_by_is_not_provided: *no_upsert
   test_upsert_all_implicitly_sets_primary_keys_when_nil: >-
     upsert_all needs conflict semantics, which the adapter honestly rejects

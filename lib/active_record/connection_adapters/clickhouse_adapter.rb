@@ -57,6 +57,13 @@ module ActiveRecord
       # Data-skipping indexes are INDEX clauses inside CREATE TABLE, not statements.
       def supports_indexes_in_create? = true
 
+      # insert_all implies skip-duplicates; without unique constraints nothing can
+      # conflict, so the semantics hold vacuously and the INSERT goes through plain.
+      # Upsert still raises upstream (supports_insert_on_duplicate_update? is false).
+      def supports_insert_on_duplicate_skip? = true
+
+      def build_insert_sql(insert) = "INSERT #{insert.into} #{insert.values_list}" # :nodoc:
+
       NATIVE_DATABASE_TYPES = {
         string: { name: "String" },
         text: { name: "String" },
