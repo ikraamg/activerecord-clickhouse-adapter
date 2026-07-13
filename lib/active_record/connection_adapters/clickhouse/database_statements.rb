@@ -72,6 +72,18 @@ module ActiveRecord
           returning.nil? ? inserted_id : [inserted_id]
         end
 
+        # The abstract default (CURRENT_TIMESTAMP) is not a ClickHouse identifier.
+        # Rails stamps date (created_on) and datetime (created_at) attributes with this
+        # one expression, and only a plain DateTime coerces into both Date32 and
+        # DateTime64 in a VALUES section — now64(6) raises TYPE_MISMATCH on dates, so
+        # bulk-insert timestamps carry second precision (probed 2026-07-13, PLAN.md §2).
+        HIGH_PRECISION_CURRENT_TIMESTAMP = Arel.sql("now()").freeze
+        private_constant :HIGH_PRECISION_CURRENT_TIMESTAMP
+
+        def high_precision_current_timestamp
+          HIGH_PRECISION_CURRENT_TIMESTAMP
+        end
+
         # The abstract version wraps bare DELETEs in a transaction; ClickHouse has
         # neither, so fixtures load as TRUNCATE + batched INSERTs.
         def insert_fixtures_set(fixture_set, tables_to_delete = [])

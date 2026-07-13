@@ -16,6 +16,8 @@ RSpec.describe "ClickHouse CRUD semantics" do
       t.integer :device_id, limit: 8
       t.string :status, default: ""
       t.integer :duration_ms, null: true
+      t.datetime :created_at, precision: 6, null: true
+      t.datetime :updated_at, precision: 6, null: true
     end
   end
 
@@ -50,6 +52,14 @@ RSpec.describe "ClickHouse CRUD semantics" do
     it "raises honestly for upsert (no ClickHouse conflict semantics)" do
       expect { model.upsert_all([{ device_id: 1 }], unique_by: :device_id) }
         .to raise_error(ArgumentError, /does not support/)
+    end
+
+    # Rails stamps record_timestamps rows with connection.high_precision_current_timestamp;
+    # the default CURRENT_TIMESTAMP literal is not a ClickHouse identifier.
+    it "stamps timestamp columns via record_timestamps" do
+      timestamped = model.tap { |klass| klass.record_timestamps = true }
+      timestamped.insert_all!([{ device_id: 12, status: "ok" }], record_timestamps: true)
+      expect(timestamped.where(device_id: 12).take.created_at).to be_within(60).of(Time.now.utc)
     end
   end
 
