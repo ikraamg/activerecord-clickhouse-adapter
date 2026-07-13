@@ -105,4 +105,61 @@ RSpec.describe "ClickHouse client-side primary key generation" do
     expect { connection.next_sequence_value("pk_gen_events.name") }
       .to raise_error(ActiveRecord::ActiveRecordError, /cannot generate/i)
   end
+
+  # Rails checks prefetch_primary_key? on every create; without a cache that is one
+  # system.tables query per insert.
+  describe "sorting-key cache" do
+    def sorting_key_queries(&)
+      queries = []
+      counter = lambda do |event|
+        queries << event.payload[:sql] if event.payload[:sql].include?("sorting_key")
+      end
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record", &)
+      queries
+    end
+
+    it "answers repeat prefetch checks without re-querying the server" do
+      connection.prefetch_primary_key?("pk_gen_events")
+      expect(sorting_key_queries { 3.times { connection.prefetch_primary_key?("pk_gen_events") } }).to be_empty
+    end
+
+    it "reuses the cached column across generated inserts" do
+      integer_model.create!(name: "warm")
+      expect(sorting_key_queries { integer_model.create!(name: "cached") }).to be_empty
+    end
+
+    it "invalidates when the table is recreated with a different key" do
+      connection.prefetch_primary_key?("pk_gen_events")
+      connection.create_table("pk_gen_events", force: true, order: "name") do |t|
+        t.string :name
+      end
+      expect(connection.prefetch_primary_key?("pk_gen_events")).to be(false)
+    ensure
+      connection.create_table("pk_gen_events", force: true, order: "id") do |t|
+        t.integer :id, limit: 8
+        t.string :name, default: ""
+      end
+    end
+
+    it "invalidates when the table is dropped" do
+      connection.prefetch_primary_key?("pk_gen_events")
+      connection.drop_table("pk_gen_events")
+      expect(connection.prefetch_primary_key?("pk_gen_events")).to be(false)
+    ensure
+      connection.create_table("pk_gen_events", force: true, order: "id") do |t|
+        t.integer :id, limit: 8
+        t.string :name, default: ""
+      end
+    end
+
+    it "invalidates when the table is renamed" do
+      connection.create_table("pk_gen_original", force: true, order: "id") { |t| t.integer :id, limit: 8 }
+      connection.prefetch_primary_key?("pk_gen_original")
+      connection.rename_table("pk_gen_original", "pk_gen_renamed")
+      expect(connection.prefetch_primary_key?("pk_gen_original")).to be(false)
+    ensure
+      connection.drop_table("pk_gen_original", if_exists: true)
+      connection.drop_table("pk_gen_renamed", if_exists: true)
+    end
+  end
 end

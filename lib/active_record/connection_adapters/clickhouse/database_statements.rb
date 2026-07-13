@@ -112,9 +112,22 @@ module ActiveRecord
 
         # [column_name, sql_type] when the table's sorting key is one column typed
         # widely enough to hold a generated id; nil otherwise (composite keys,
-        # expression keys, narrow integers, strings).
+        # expression keys, narrow integers, strings). Cached per connection because
+        # Rails re-checks prefetch_primary_key? on every create; the migration-API
+        # DDL methods (create/drop/rename_table) invalidate it.
         def generatable_primary_key(table_name)
-          row = select_one(format(SORTING_KEY_COLUMN_SQL, quote(table_name.to_s)), "SCHEMA")
+          cache = @generatable_primary_keys ||= {}
+          cache.fetch(table_name.to_s) do |key|
+            cache[key] = fetch_generatable_primary_key(key)
+          end
+        end
+
+        def clear_generatable_primary_key_cache
+          @generatable_primary_keys = nil
+        end
+
+        def fetch_generatable_primary_key(table_name)
+          row = select_one(format(SORTING_KEY_COLUMN_SQL, quote(table_name)), "SCHEMA")
           return nil unless row && GENERATABLE_ID_TYPES.match?(row["type"])
 
           [row["name"], row["type"]]

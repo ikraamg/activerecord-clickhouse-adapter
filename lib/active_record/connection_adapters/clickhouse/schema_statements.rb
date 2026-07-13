@@ -9,11 +9,18 @@ module ActiveRecord
         # ClickHouse has no autoincrement; tables default to no id column and the
         # sorting key acts as the primary key.
         def create_table(table_name, id: false, **options, &block)
+          clear_generatable_primary_key_cache
           options = internal_table_options(table_name, options)
           super
         end
 
+        def drop_table(*, **)
+          clear_generatable_primary_key_cache
+          super
+        end
+
         def rename_table(table_name, new_name, **)
+          clear_generatable_primary_key_cache
           execute("RENAME TABLE #{quote_table_name(table_name)} TO #{quote_table_name(new_name)}")
         end
 
