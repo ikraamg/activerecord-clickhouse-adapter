@@ -144,11 +144,12 @@ module ActiveRecord
             return value if value.is_a?(Time)
 
             string = value.to_s
-            if (match = WIRE_FORMAT.match(string))
-              time_from_wall_clock(wall_clock_parts(match))
-            else
-              zone.parse(string).utc
-            end
+            instant = if (match = WIRE_FORMAT.match(string))
+                        time_from_wall_clock(wall_clock_parts(match))
+                      else
+                        zone.parse(string).utc
+                      end
+            ActiveRecord.default_timezone == :local ? instant.getlocal : instant
           end
 
           private

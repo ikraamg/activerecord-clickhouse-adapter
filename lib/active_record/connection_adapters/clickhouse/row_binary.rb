@@ -69,7 +69,7 @@ module ActiveRecord
           when "IPv6" then -> { IPAddr.new_ntoh(@body.byteslice(advance(16), 16)) }
           when "Date" then -> { Date.jd(UNIX_EPOCH_JULIAN_DAY + read_unsigned(2)) }
           when "Date32" then -> { Date.jd(UNIX_EPOCH_JULIAN_DAY + read_signed(4)) }
-          when "DateTime" then -> { Time.at(read_unsigned(4)).utc }
+          when "DateTime" then -> { represent_instant(Time.at(read_unsigned(4))) }
           when "DateTime64" then datetime64_decoder(node)
           when "Float32" then -> { @body.unpack1("e", offset: advance(4)) }
           when "Float64" then -> { @body.unpack1("E", offset: advance(8)) }
@@ -125,7 +125,13 @@ module ActiveRecord
 
         def datetime64_decoder(node)
           divisor = 10**node.args.fetch(0)
-          -> { Time.at(Rational(read_signed(8), divisor)).utc }
+          -> { represent_instant(Time.at(Rational(read_signed(8), divisor))) }
+        end
+
+        # The wire carries an epoch, so the instant is zone-free; representation
+        # follows default_timezone like every built-in adapter (Time.at is local).
+        def represent_instant(time)
+          ActiveRecord.default_timezone == :local ? time : time.utc
         end
 
         def decimal_decoder(node)
