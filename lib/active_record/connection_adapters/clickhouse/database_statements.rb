@@ -125,6 +125,14 @@ module ActiveRecord
           HIGH_PRECISION_CURRENT_TIMESTAMP
         end
 
+        # Rails nests a SavepointTransaction inside any dirty transaction (e.g. the
+        # retry in create_or_find_by) even though supports_savepoints? is false. Like
+        # begin/commit/rollback (PLAN.md §5 decision 4), the savepoint verbs are honest
+        # no-ops — nothing transactional exists to restore.
+        def create_savepoint(_name = nil); end
+        def exec_rollback_to_savepoint(_name = nil); end
+        def release_savepoint(_name = nil); end
+
         # The abstract version wraps bare DELETEs in a transaction; ClickHouse has
         # neither, so fixtures load as TRUNCATE + batched INSERTs.
         def insert_fixtures_set(fixture_set, tables_to_delete = [])
