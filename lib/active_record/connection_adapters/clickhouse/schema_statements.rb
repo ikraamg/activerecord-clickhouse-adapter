@@ -23,6 +23,15 @@ module ActiveRecord
           super
         end
 
+        # HABTM join tables have an obvious sorting key: the two reference columns.
+        def create_join_table(first_table, second_table, **options)
+          unless options.key?(:order)
+            references = [first_table, second_table].map { |table| "#{table.to_s.singularize}_id" }.sort
+            options[:order] = "(#{references.join(", ")})"
+          end
+          super
+        end
+
         def rename_table(table_name, new_name, **)
           clear_generatable_primary_key_cache
           execute("RENAME TABLE #{quote_table_name(table_name)} TO #{quote_table_name(new_name)}#{on_cluster_clause}")
@@ -35,6 +44,35 @@ module ActiveRecord
             ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
             #{remove_column_for_alter(table_name, column_name, type, **options)}
           SQL
+        end
+
+        def rename_column(table_name, column_name, new_column_name)
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            RENAME COLUMN #{quote_column_name(column_name)} TO #{quote_column_name(new_column_name)}
+          SQL
+        end
+
+        # MODIFY COLUMN takes the full new definition; existing rows are cast in a
+        # mutation, so incompatible narrowing surfaces as a server error.
+        def change_column(table_name, column_name, type, **options)
+          sql_type = type_to_sql(type, **options.slice(:limit, :precision, :scale))
+          sql_type = "Nullable(#{sql_type})" if options[:null]
+          sql_type = "LowCardinality(#{sql_type})" if options[:low_cardinality]
+          definition = "MODIFY COLUMN #{quote_column_name(column_name)} #{sql_type}"
+          definition += " DEFAULT #{quote(options[:default])}" if options.key?(:default) && !options[:default].nil?
+          execute("ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause} #{definition}")
+        end
+
+        # Narrowing to non-Nullable fails on stored NULLs (code 349), so the Rails
+        # backfill default runs first as a synchronous mutation.
+        def change_column_null(table_name, column_name, null, default = nil)
+          column = columns(table_name).find { |candidate| candidate.name == column_name.to_s }
+          raise ArgumentError, "no such column #{column_name} in #{table_name}" unless column
+
+          backfill_nulls(table_name, column_name, default) if !null && !default.nil?
+          inner_type = column.sql_type.sub(/\ANullable\((.*)\)\z/m, '\1')
+          change_column(table_name, column_name, null ? "Nullable(#{inner_type})" : inner_type)
         end
 
         # The insert-trigger half of the OLAP ingest-raw/read-aggregated idiom. A TO
@@ -85,11 +123,11 @@ module ActiveRecord
         # Columns are inferred from the source table, and the SOURCE clause carries the
         # adapter's credentials — the dictionary's own loader authenticates separately
         # and would otherwise connect as `default` (probed 2026-07-14).
-        def create_dictionary(name, source:, primary_key:, layout: :flat, lifetime: 300)
+        def create_dictionary(name, source:, primary_key:, layout: :flat, lifetime: 300, database: nil)
           execute(<<~SQL.squish)
-            CREATE DICTIONARY #{quote_table_name(name)} (#{dictionary_columns(source)})
+            CREATE DICTIONARY #{quote_table_name(name)} (#{dictionary_columns(source, database)})
             PRIMARY KEY #{quote_column_name(primary_key)}
-            SOURCE(CLICKHOUSE(#{dictionary_source(source)}))
+            SOURCE(CLICKHOUSE(#{dictionary_source(source, database)}))
             LAYOUT(#{dictionary_layout(layout)})
             LIFETIME(#{dictionary_lifetime(lifetime)})
           SQL
@@ -242,18 +280,80 @@ module ActiveRecord
           row ? dumpable_table_options(row) : {}
         end
 
+        def change_column_comment(table_name, column_name, comment_or_changes)
+          comment = extract_new_comment_value(comment_or_changes)
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            COMMENT COLUMN #{quote_column_name(column_name)} #{quote(comment.to_s)}
+          SQL
+        end
+
+        def change_table_comment(table_name, comment_or_changes)
+          comment = extract_new_comment_value(comment_or_changes)
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            MODIFY COMMENT #{quote(comment.to_s)}
+          SQL
+        end
+
+        def table_comment(table_name)
+          comment = select_value(<<~SQL.squish, "SCHEMA")
+            SELECT comment FROM system.tables
+            WHERE database = currentDatabase() AND name = #{quote(table_name.to_s)}
+          SQL
+          comment.presence
+        end
+
+        # Data-skipping indexes on existing tables; new parts index immediately,
+        # existing parts only after MATERIALIZE INDEX (not issued here).
+        def add_index(table_name, column_name, **options)
+          expression = Array(column_name).map { |part| quote_column_name(part) }.join(", ")
+          type = options.fetch(:using) { raise ArgumentError, "ClickHouse indexes need using: (e.g. \"bloom_filter\")" }
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            ADD INDEX #{quote_column_name(options.fetch(:name, index_name(table_name, column_name)))}
+            #{expression} TYPE #{type} GRANULARITY #{options.fetch(:granularity, 1)}
+          SQL
+        end
+
+        def remove_index(table_name, column_name = nil, **options)
+          name = options.fetch(:name) { index_name(table_name, column_name) }
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            DROP INDEX #{"IF EXISTS " if options[:if_exists]}#{quote_column_name(name)}
+          SQL
+        end
+
         private
+
+        def backfill_nulls(table_name, column_name, default)
+          with_request_settings(mutations_sync: 1) do
+            execute(<<~SQL.squish)
+              ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+              UPDATE #{quote_column_name(column_name)} = #{quote(default)}
+              WHERE #{quote_column_name(column_name)} IS NULL
+            SQL
+          end
+        end
 
         def drop_table_sql(...)
           "#{super}#{on_cluster_clause}"
         end
 
-        def dictionary_columns(source)
-          columns(source).map { |column| "#{quote_column_name(column.name)} #{column.sql_type}" }.join(", ")
+        def dictionary_columns(source, database)
+          rows = select_all(<<~SQL.squish, "SCHEMA").to_a
+            SELECT name, type FROM system.columns
+            WHERE database = #{database ? quote(database.to_s) : "currentDatabase()"}
+              AND table = #{quote(source.to_s)}
+            ORDER BY position
+          SQL
+          raise ArgumentError, "dictionary source table #{source} has no columns" if rows.empty?
+
+          rows.map { |row| "#{quote_column_name(row["name"])} #{row["type"]}" }.join(", ")
         end
 
-        def dictionary_source(source)
-          clauses = ["TABLE #{quote(source.to_s)}", "DB #{quote(@config[:database].to_s)}"]
+        def dictionary_source(source, database)
+          clauses = ["TABLE #{quote(source.to_s)}", "DB #{quote((database || @config[:database]).to_s)}"]
           clauses << "USER #{quote(@config[:username].to_s)}" if @config[:username]
           clauses << "PASSWORD #{quote(@config[:password].to_s)}" if @config[:password]
           clauses.join(" ")
@@ -364,7 +464,7 @@ module ActiveRecord
           conditions = ["database = currentDatabase()"]
           conditions << "name = #{quote(name.to_s)}" if name
           case type
-          when "BASE TABLE" then conditions << "engine NOT IN (#{quoted_non_table_engines})"
+          when "BASE TABLE" then conditions << "engine NOT IN (#{quoted_non_table_engines}, 'Dictionary')"
           when "VIEW" then conditions << "engine IN (#{quoted_non_table_engines})"
           end
           "SELECT name FROM system.tables WHERE #{conditions.join(" AND ")} ORDER BY name"

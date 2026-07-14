@@ -145,6 +145,17 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(positions).to eq([1, 2, 1])
   end
 
+  it "evolves a column through add, rename, widen and drop" do
+    conn = ActiveRecord::Base.lease_connection
+    conn.add_column("spine_events", :note, :string, default: "")
+    conn.rename_column("spine_events", :note, :annotation)
+    conn.change_column("spine_events", :annotation, :string, null: true)
+    expect(conn.columns("spine_events").find { |c| c.name == "annotation" }.null).to be(true)
+  ensure
+    conn.remove_column("spine_events", :annotation, if_exists: true)
+    model.reset_column_information
+  end
+
   it "resolves device names through a dictionary instead of a JOIN" do
     conn = ActiveRecord::Base.lease_connection
     conn.execute("CREATE TABLE spine_devices (id UInt64, name String) ENGINE = MergeTree ORDER BY id")

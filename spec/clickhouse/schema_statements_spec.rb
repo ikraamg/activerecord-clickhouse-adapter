@@ -200,4 +200,126 @@ RSpec.describe "ClickHouse schema statements" do
       connection.change_column_default("default_probe", "status", "old")
     end
   end
+
+  describe "#create_join_table" do
+    after do
+      connection.drop_table("musicians_songs", if_exists: true)
+    end
+
+    it "defaults the sorting key to the two reference columns" do
+      connection.create_join_table(:musicians, :songs)
+      expect(connection.table_options("musicians_songs")[:order]).to eq("(musician_id, song_id)")
+    end
+
+    it "keeps an explicit order option" do
+      connection.create_join_table(:musicians, :songs, order: "song_id")
+      expect(connection.table_options("musicians_songs")[:order]).to eq("song_id")
+    end
+  end
+
+  describe "column alterations" do
+    before do
+      connection.create_table("alter_probe", force: true, order: "id") do |t|
+        t.integer :id, limit: 8
+        t.string :label
+        t.integer :amount, limit: 4
+      end
+      connection.execute("INSERT INTO alter_probe VALUES (1, 'first', 10)")
+    end
+
+    after do
+      connection.drop_table("alter_probe", if_exists: true)
+    end
+
+    def column(name)
+      connection.columns("alter_probe").find { |candidate| candidate.name == name.to_s }
+    end
+
+    describe "#rename_column" do
+      it "renames keeping the rows" do
+        connection.rename_column("alter_probe", :label, :title)
+        expect(connection.select_value("SELECT title FROM alter_probe")).to eq("first")
+      end
+
+      it "drops the old name" do
+        connection.rename_column("alter_probe", :label, :title)
+        expect(column(:label)).to be_nil
+      end
+    end
+
+    describe "#change_column" do
+      it "widens the type keeping the rows" do
+        connection.change_column("alter_probe", :amount, :integer, limit: 8)
+        expect(column(:amount).sql_type).to eq("Int64")
+      end
+
+      it "wraps in Nullable when null: true rides along" do
+        connection.change_column("alter_probe", :label, :string, null: true)
+        expect(column(:label).null).to be(true)
+      end
+
+      it "applies a new default in the same statement" do
+        connection.change_column("alter_probe", :label, :string, default: "untitled")
+        expect(column(:label).default).to eq("untitled")
+      end
+
+      it "accepts verbatim ClickHouse types" do
+        connection.change_column("alter_probe", :label, "LowCardinality(String)")
+        expect(column(:label).sql_type).to eq("LowCardinality(String)")
+      end
+    end
+
+    describe "#change_column_null" do
+      it "makes a column nullable" do
+        connection.change_column_null("alter_probe", :label, true)
+        expect(column(:label).null).to be(true)
+      end
+
+      it "makes a nullable column required again" do
+        connection.change_column_null("alter_probe", :label, true)
+        connection.change_column_null("alter_probe", :label, false)
+        expect(column(:label).null).to be(false)
+      end
+
+      it "backfills stored NULLs with the Rails default argument before narrowing" do
+        connection.change_column_null("alter_probe", :label, true)
+        connection.execute("INSERT INTO alter_probe VALUES (2, NULL, 20)")
+        connection.change_column_null("alter_probe", :label, false, "filled")
+        expect(connection.select_value("SELECT label FROM alter_probe WHERE id = 2")).to eq("filled")
+      end
+    end
+
+    describe "#change_column_comment" do
+      it "attaches the comment to the column" do
+        connection.change_column_comment("alter_probe", :label, "human name")
+        expect(column(:label).comment).to eq("human name")
+      end
+    end
+
+    describe "#change_table_comment" do
+      it "attaches the comment to the table" do
+        connection.change_table_comment("alter_probe", "scratch data")
+        expect(connection.table_comment("alter_probe")).to eq("scratch data")
+      end
+    end
+
+    describe "#add_index / #remove_index" do
+      it "adds a data-skipping index to an existing table" do
+        connection.add_index("alter_probe", :label, name: "idx_label", using: "bloom_filter", granularity: 2)
+        expect(connection.indexes("alter_probe").map(&:name)).to include("idx_label")
+      end
+
+      it "records the index type and granularity" do
+        connection.add_index("alter_probe", :label, name: "idx_label", using: "bloom_filter", granularity: 2)
+        index = connection.indexes("alter_probe").find { |candidate| candidate.name == "idx_label" }
+        expect([index.using, index.granularity]).to eq(["bloom_filter", 2])
+      end
+
+      it "removes the index by name" do
+        connection.add_index("alter_probe", :label, name: "idx_label", using: "bloom_filter")
+        connection.remove_index("alter_probe", name: "idx_label")
+        expect(connection.indexes("alter_probe").map(&:name)).not_to include("idx_label")
+      end
+    end
+  end
 end
