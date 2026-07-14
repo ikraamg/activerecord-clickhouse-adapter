@@ -135,6 +135,7 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | ClickHouse 26.6 nulls LowCardinality keys under `group_by_use_nulls` (25.8 kept the type default for ROLLUP total rows) — LowCardinality totals now arrive keyed nil like every other type | Iteration 22 probe (26.6.1) |
 | ClickHouse 26.6 adds the `Geometry` and `QBit` type families and removes `Object` (the old JSON implementation) from `system.data_type_families` | Iteration 22 probe (26.6.1) |
 | After a lazy `String → Nullable(String)` conversion, 25.8's `IS NULL` reads a stale `.null` subcolumn for pre-conversion parts (reports NULL for real values until OPTIMIZE); `SETTINGS optimize_functions_to_subcolumns = 0` reads the true values — mutations are unaffected | Iteration 22 probe (25.8.28) |
+| ClickHouse 25.3 (the LTS before 25.8) fails 5 authored specs — both JSON-over-the-wire row_binary cases, `lag` window sugar, the type-family census, and the batching EXPLAIN prune check — so 25.8 is the hard support floor, not a soft default | Iteration 22b probe (25.3.14) |
 
 Local corpora:
 
@@ -845,6 +846,28 @@ catalog. Suite: 490 examples green on 25.8 and 26.6.
    pairs from `0_stateless` replayed through the adapter (statement in → result out must
    match the `.reference`), proving our SQL generation and casting agree with the server's
    own test corpus.
+
+### Version matrix policy
+
+One pinned corpus, version overlays, a live-server matrix — never dynamic fetching of
+upstream test repos in CI (that trades away determinism and the ratchet):
+
+- **Corpus pin**: the vendored Rails suites track the newest *released* Rails
+  (`vendor/UPSTREAM`). When a new minor ships: re-pin the corpus to it in one commit,
+  regenerate skips against the live server, and move the previous version's drift into a
+  `skips_*.yml` overlay (registry in `support/cases/helper.rb`, predicate per overlay).
+  Overlays quarantine drift in upstream *test text*; behavioral differences stay in
+  `skips.yml` or get fixed. Delete an overlay when its version leaves the support window.
+- **Server floor**: ClickHouse 25.8 (the oldest LTS in CI). Older LTS lines fail on
+  wire-format and analyzer differences (probed 25.3, 2026-07-14: RowBinary JSON columns,
+  window frames, EXPLAIN shapes) and are explicitly unsupported. `latest` runs in the CI
+  matrix; `head` (nightly) runs in the weekly drift workflow.
+- **Drift detection**: `.github/workflows/drift.yml` runs Rails main and ClickHouse head
+  weekly, decoupled from merge-gating CI. A red drift run means: probe live, add the
+  grounding fact to §2, fix or overlay, before it reaches a release.
+- **Acceptance corpus**: TRMNL core's migrations are snapshotted byte-exact in
+  `spec/vendor/trmnl_corpus/` (its UPSTREAM records the source SHA) so CI exercises them;
+  a local `../core` checkout takes precedence to surface drift before the snapshot stales.
 
 ## 8. Environments
 

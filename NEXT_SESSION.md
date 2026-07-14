@@ -1,17 +1,16 @@
 # Iteration 23: release mechanics, or the next corpus
 
-> Status at handoff: repo pushed to the private GitHub remote
-> (`ikraamg/activerecord-clickhouse-adapter`) and the full CI matrix hardened in
-> Iteration 22. First real Actions run exposed four environment truths the local
-> setup couldn't: RuboCop scanning CI's `vendor/bundle` (Exclude replaced the
-> defaults — now `inherit_mode: merge`), `Hash#inspect` drift on Ruby < 3.4 (the
-> dumper now renders `settings:` itself), Rails main's new `QueryIntent`
-> execution seam (dual-contract `perform_query`, ledger #50, plus
-> `skips_edge.yml` for vendored-corpus text drift), and ClickHouse 26.6 drift
-> (MODIFY COLUMN narrowing needs a DEFAULT clause, async_insert default flipped
-> on, LowCardinality ROLLUP keys now null, Geometry/QBit added + Object removed
-> — all probed live, §2). 487 rspec examples green on both 25.8 and 26.6,
-> harness green on released 8.1 and edge, rubocop clean.
+> Status at handoff: CI matrix hardened (Iteration 22) and the harness's
+> version story finished (Iteration 22b): a weekly drift workflow
+> (`.github/workflows/drift.yml`) runs Rails main + ClickHouse `head` decoupled
+> from merge-gating CI; skip overlays are a data-driven registry
+> (`SKIP_OVERLAYS` in `support/cases/helper.rb`); TRMNL core's migrations are
+> snapshotted byte-exact in `spec/vendor/trmnl_corpus/` so CI runs the
+> acceptance corpus without the private checkout (a local `../core` still takes
+> precedence); and the ClickHouse floor is documented as 25.8 — 25.3 was probed
+> live and fails on RowBinary JSON columns, window frames, and EXPLAIN shapes.
+> Policy lives in PLAN.md §7 "Version matrix policy" (corpus re-pin cadence,
+> overlay lifecycle, floor rationale). 490 rspec examples green, rubocop clean.
 
 ## Scope
 

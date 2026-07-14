@@ -21,7 +21,7 @@ Add this line to your application's Gemfile:
 gem "activerecord-clickhouse-adapter"
 ```
 
-Requires Active Record 8.1+, Ruby 3.2+, and ClickHouse 25.x.
+Requires Active Record 8.1+, Ruby 3.2+, and ClickHouse 25.8+ (each LTS from 25.8 through `latest` runs in CI).
 
 ## Getting Started
 
