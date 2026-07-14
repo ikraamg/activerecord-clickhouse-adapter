@@ -80,5 +80,33 @@ RSpec.describe ActiveRecord::Tasks::ClickHouseDatabaseTasks do
       names = admin_connection.execute("SHOW TABLES FROM #{scratch_database}").rows.flatten
       expect(names).to include("events")
     end
+
+    context "with a dictionary" do
+      before do
+        admin_connection.execute(<<~SQL.squish)
+          CREATE DICTIONARY #{scratch_database}.event_labels (device_id Int64, kind String)
+          PRIMARY KEY device_id
+          SOURCE(CLICKHOUSE(TABLE 'events' DB '#{scratch_database}' USER 'rails' PASSWORD 'rails'))
+          LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 300)
+        SQL
+      end
+
+      it "hides credentials in the dumped file (the server masks them)" do
+        tasks.structure_dump(structure_path, nil)
+        expect(File.read(structure_path)).to include("PASSWORD '[HIDDEN]'")
+      end
+
+      it "reinjects the connection credentials on load so dictGet still authenticates" do
+        tasks.structure_dump(structure_path, nil)
+        admin_connection.execute("DROP DICTIONARY #{scratch_database}.event_labels")
+        admin_connection.execute("DROP TABLE #{scratch_database}.events")
+        tasks.structure_load(structure_path, nil)
+        admin_connection.execute("INSERT INTO #{scratch_database}.events VALUES (1, 'boot')")
+        value = admin_connection.execute(
+          "SELECT dictGet('#{scratch_database}.event_labels', 'kind', toUInt64(1))"
+        ).rows.flatten.first
+        expect(value).to eq("boot")
+      end
+    end
   end
 end

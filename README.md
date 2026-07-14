@@ -76,6 +76,8 @@ end
 
 Columns are non-nullable by default, matching ClickHouse. Use `null: true` for `Nullable(...)`.
 
+The full alter surface works on existing tables — `rename_column`, `change_column`, `change_column_null` (with the Rails backfill default), `change_column_default`, `change_column_comment`, `change_table_comment`, and `add_index`/`remove_index` for data-skipping indexes. `create_join_table` defaults its sorting key to the two reference columns.
+
 ClickHouse-specific column options:
 
 ```ruby
@@ -111,9 +113,12 @@ Dictionaries replace star-schema dimension JOINs with in-memory lookups. Columns
 ```ruby
 create_dictionary :device_names, source: "devices", primary_key: :id
 create_dictionary :device_names, source: "devices", primary_key: :id, layout: :hashed, lifetime: 60..300
+create_dictionary :device_names, source: "devices", database: "dimensions", primary_key: :id
 reload_dictionary :device_names
 drop_dictionary :device_names, if_exists: true
 ```
+
+Dictionaries round-trip through `schema.rb` (as `create_dictionary` calls that re-infer columns and re-inject credentials on load) and `structure.sql` (credentials are masked in the file and swapped back in by `db:schema:load`).
 
 Set `cluster:` in `database.yml` to stamp schema DDL with `ON CLUSTER`, sending it through the distributed DDL queue:
 

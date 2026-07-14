@@ -127,6 +127,9 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | ON CLUSTER DDL needs a coordination layer even on the stock single-replica `default` cluster (NO_ELEMENTS_IN_CONFIG, code 139); an embedded Keeper (`keeper_server` + `zookeeper` pointing at itself) suffices | Iteration 20 probe |
 | ReplacingMergeTree refuses ADD PROJECTION while `deduplicate_merge_projection_mode = 'throw'` (the default): SUPPORT_IS_DISABLED, code 344 — plain MergeTree takes projections unconditionally | Iteration 20 probe |
 | `system.projections` stores each projection's definition as query text (`SELECT ... [GROUP BY ...] [ORDER BY ...]`) plus name/type/sorting_key — enough to round-trip `add_projection` through schema.rb | Iteration 20 probe |
+| Narrowing `Nullable(T)` → `T` via MODIFY COLUMN fails on stored NULLs (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, code 349, surfacing as UNFINISHED mutation 341) — a backfill must run first | Iteration 21 probe |
+| `SHOW CREATE` masks dictionary source passwords as `PASSWORD '[HIDDEN]'` — a structure.sql dump replayed verbatim recreates a dictionary that can never authenticate | Iteration 21 probe |
+| `ALTER TABLE ... RENAME COLUMN / MODIFY COLUMN <type> / ADD INDEX / DROP INDEX / COMMENT COLUMN / MODIFY COMMENT` all work on 25.8 with the documented grammar | Iteration 21 probe |
 
 Local corpora:
 
@@ -484,6 +487,27 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     takes, appended right after each table's `create_table` block — the dump loads and
     re-dumps byte-identically without a structure.sql detour.
 
+47. **The alter surface is MODIFY COLUMN all the way down** *(Iteration 21)*:
+    `change_column` renders the full new definition (type wrappers + DEFAULT in one
+    statement), `change_column_null` re-reads the current sql_type and toggles the
+    Nullable wrapper, and the Rails backfill default runs first as a synchronous
+    mutation (`mutations_sync = 1`) because narrowing over stored NULLs is a server
+    error, not a silent coercion. `add_index`/`remove_index` reuse the CREATE-time
+    data-skipping grammar via ALTER. All verbs carry `on_cluster_clause`.
+
+48. **Dictionaries round-trip both dump formats without leaking credentials**
+    *(Iteration 21)*: schema.rb emits `create_dictionary` identity kwargs only
+    (columns re-infer, credentials re-inject at load); structure.sql keeps the
+    server's own `PASSWORD '[HIDDEN]'` masking and `structure_load` swaps the
+    loading connection's USER/PASSWORD back into CREATE DICTIONARY statements —
+    the file stays portable across environments and secret-free.
+
+49. **Dictionaries are not BASE TABLEs** *(Iteration 21)*: `data_source_sql`
+    excludes engine = 'Dictionary' from the "BASE TABLE" type so `tables` (and the
+    dumper's create_table loop) skip them; they remain in `data_sources` so
+    structure.sql still carries them. The dumper also finally honors
+    `ignore_tables` for materialized views and dictionaries.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -753,6 +777,17 @@ the compose file so distributed DDL is provable on one node, 9 live examples.
 Projections now dump into schema.rb as `add_projection` lines parsed from
 `system.projections` (ledger #46), round-tripping byte-identically. Harness:
 **2,226 runs, 0 failures, 177 skips**. Suite: 465 examples green.
+
+**Phase 6 (cont.) — AR-parity alter surface + dictionary round-trips.** *(landed —
+Iteration 21)* `rename_column`, `change_column`, `change_column_null` (with the
+Rails backfill default as a synchronous mutation), `change_column_comment`,
+`change_table_comment`/`table_comment`, post-create `add_index`/`remove_index`,
+and `create_join_table` defaulting its sorting key to the two reference columns
+(ledger #47). `create_dictionary` gained `database:` for cross-database sources;
+dictionaries now round-trip schema.rb and structure.sql without leaking
+credentials (ledger #48) and no longer masquerade as BASE TABLEs (ledger #49).
+Fixed in passing: the dumper now honors `ignore_tables` for materialized views.
+Harness: **2,226 runs, 0 failures, 177 skips**. Suite: 487 examples green.
 
 ## 7. Spec strategy (three tiers)
 

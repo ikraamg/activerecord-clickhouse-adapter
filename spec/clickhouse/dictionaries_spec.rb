@@ -41,6 +41,28 @@ RSpec.describe "ClickHouse dictionaries" do
     end
   end
 
+  describe "#create_dictionary with a cross-database source" do
+    before do
+      connection.execute("CREATE DATABASE IF NOT EXISTS ar_clickhouse_dims")
+      connection.execute(<<~SQL.squish)
+        CREATE TABLE ar_clickhouse_dims.remote_devices (id UInt64, label String)
+        ENGINE = MergeTree ORDER BY id
+      SQL
+      connection.execute("INSERT INTO ar_clickhouse_dims.remote_devices VALUES (1, 'roof')")
+    end
+
+    after do
+      connection.execute("DROP DICTIONARY IF EXISTS cross_db_labels")
+      connection.execute("DROP DATABASE IF EXISTS ar_clickhouse_dims")
+    end
+
+    it "reads the source from the named database" do
+      connection.create_dictionary("cross_db_labels", source: "remote_devices",
+                                                      database: "ar_clickhouse_dims", primary_key: :id)
+      expect(connection.select_value("SELECT dictGet('cross_db_labels', 'label', toUInt64(1))")).to eq("roof")
+    end
+  end
+
   describe "#drop_dictionary" do
     it "removes the dictionary" do
       connection.create_dictionary("doomed_labels", source: "dict_devices", primary_key: :id)

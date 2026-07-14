@@ -6,9 +6,10 @@ First release. Highlights:
 - RowBinary wire format by default, with transparent per-query JSON fallback
 - Server-side bind parameters (`{pN:Type}` HTTP params) — no string interpolation
 - MergeTree-aware migrations: engines, sorting keys, partitions, TTLs, codecs, projections, materialized views
-- `schema.rb` and `structure.sql` round-trip ClickHouse DDL
+- Full alter surface: `rename_column`, `change_column`, `change_column_null`, `change_column_default`, comments, and post-create `add_index`/`remove_index`
+- `schema.rb` and `structure.sql` round-trip ClickHouse DDL, including projections and dictionaries
 - OLAP relation surface: `final`, `prewhere`, `sample`, `settings`, `limit_by`, `array_join`, `group_by_period`, `fill`, `rollup`, `window`, `dict_get`
-- Dictionaries: `create_dictionary` (columns inferred from source, credentials injected), `drop_dictionary`, `reload_dictionary`
+- Dictionaries: `create_dictionary` (columns inferred from source, credentials injected, cross-database via `database:`), `drop_dictionary`, `reload_dictionary`
 - `ON CLUSTER` DDL via a `cluster:` connection setting
 - Approximate aggregates: `uniq_count`, `quantile`, `top_k`, `arg_max`, `arg_min`, `estimated_count`, with `-If`/`-Merge` combinators
 - `insert_stream`: chunked streaming bulk ingestion for lazy enumerables

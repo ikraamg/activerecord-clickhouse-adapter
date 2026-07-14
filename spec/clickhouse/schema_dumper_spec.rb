@@ -35,11 +35,18 @@ RSpec.describe "ClickHouse schema dumper" do
     end
     conn.add_projection("dump_probe_readings", "by_kind", order: "kind")
     conn.add_projection("dump_probe_readings", "daily_counts", select: "device_id, count()", group: "device_id")
+    conn.execute("DROP DICTIONARY IF EXISTS dump_probe_labels")
+    conn.execute("CREATE TABLE dump_probe_dims (id UInt64, label String) ENGINE = MergeTree ORDER BY id")
+    conn.create_dictionary("dump_probe_labels", source: "dump_probe_dims", primary_key: :id,
+                                                layout: :hashed, lifetime: 60..300)
   end
 
   after(:all) do
-    ActiveRecord::Base.lease_connection.drop_table("dump_probe_events", if_exists: true)
-    ActiveRecord::Base.lease_connection.drop_table("dump_probe_readings", if_exists: true)
+    conn = ActiveRecord::Base.lease_connection
+    conn.execute("DROP DICTIONARY IF EXISTS dump_probe_labels")
+    conn.drop_table("dump_probe_dims", if_exists: true)
+    conn.drop_table("dump_probe_events", if_exists: true)
+    conn.drop_table("dump_probe_readings", if_exists: true)
   end
 
   it "dumps the table with its ClickHouse options and no synthetic id" do
@@ -91,6 +98,17 @@ RSpec.describe "ClickHouse schema dumper" do
     expect(dump).to include(
       'add_projection "dump_probe_readings", "daily_counts", select: "device_id, count()", group: "device_id"'
     )
+  end
+
+  it "dumps dictionaries with source, key, layout and lifetime" do
+    expect(dump).to include(
+      'create_dictionary "dump_probe_labels", source: "dump_probe_dims", ' \
+      'primary_key: "id", layout: :hashed, lifetime: 60..300'
+    )
+  end
+
+  it "never leaks credentials into the dump" do
+    expect(dump).not_to match(/PASSWORD|USER '/)
   end
 
   context "when the dump is loaded back and re-dumped" do

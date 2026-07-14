@@ -10,10 +10,46 @@ module ActiveRecord
       class SchemaDumper < ConnectionAdapters::SchemaDumper
         private
 
-        # Materialized views dump after every table so their TO targets exist on load.
+        # Materialized views and dictionaries dump after every table so their sources
+        # exist on load (dictionaries bind lazily, but keep the order intuitive).
         def tables(stream)
           super
           materialized_views(stream)
+          dictionaries(stream)
+        end
+
+        DICTIONARIES_SQL = <<~SQL.squish
+          SELECT name, create_table_query FROM system.tables
+          WHERE database = currentDatabase() AND engine = 'Dictionary'
+          ORDER BY name
+        SQL
+        private_constant :DICTIONARIES_SQL
+
+        def dictionaries(stream)
+          dumpable = @connection.select_all(DICTIONARIES_SQL, "SCHEMA").reject { |row| ignored?(row["name"]) }
+          dumpable.each_with_index do |dictionary, index|
+            stream.puts if index.zero?
+            stream.puts dictionary_statement(dictionary)
+          end
+        end
+
+        # create_dictionary re-infers columns and re-injects credentials at load time,
+        # so only the identity kwargs are parsed back out of the stored DDL.
+        def dictionary_statement(dictionary)
+          kwargs = dictionary_kwargs(dictionary["create_table_query"])
+          rendered = kwargs.map { |keyword, value| "#{keyword}: #{value}" }
+          "  create_dictionary #{dictionary["name"].inspect}, #{rendered.join(", ")}"
+        end
+
+        def dictionary_kwargs(ddl)
+          database = ddl[/\bDB '([^']+)'/, 1]
+          {
+            source: ddl[/\bTABLE '([^']+)'/, 1].inspect,
+            database: (database.inspect if database && database != current_database),
+            primary_key: ddl[/\bPRIMARY KEY ([^\s(]+)/, 1].inspect,
+            layout: ddl[/\bLAYOUT\((\w+)\(/, 1].downcase.to_sym.inspect,
+            lifetime: "#{ddl[/\bLIFETIME\(MIN (\d+)/, 1].to_i}..#{ddl[/\bMAX (\d+)\)/, 1].to_i}"
+          }.compact
         end
 
         # Projections dump right after their table as add_projection calls, parsed back
@@ -55,7 +91,8 @@ module ActiveRecord
         private_constant :MATERIALIZED_VIEW_SQL
 
         def materialized_views(stream)
-          @connection.select_all(MATERIALIZED_VIEW_SQL, "SCHEMA").each_with_index do |view, index|
+          dumpable = @connection.select_all(MATERIALIZED_VIEW_SQL, "SCHEMA").reject { |view| ignored?(view["name"]) }
+          dumpable.each_with_index do |view, index|
             stream.puts if index.zero?
             stream.puts materialized_view_statement(view)
           end

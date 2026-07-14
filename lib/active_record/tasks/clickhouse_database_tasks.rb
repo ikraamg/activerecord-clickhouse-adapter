@@ -49,11 +49,23 @@ module ActiveRecord
         establish_connection
         File.read(filename).split(";\n\n").each do |statement|
           statement = statement.strip
-          connection.execute(statement) unless statement.empty?
+          connection.execute(reinject_dictionary_credentials(statement)) unless statement.empty?
         end
       end
 
       private
+
+      # SHOW CREATE masks dictionary source passwords as [HIDDEN] (and the dumped USER
+      # belongs to the dumping environment), so loading swaps in this connection's
+      # credentials — the same ones create_dictionary would inject.
+      def reinject_dictionary_credentials(statement)
+        return statement unless statement.match?(/\ACREATE DICTIONARY/i)
+
+        quote = ->(value) { "'#{value.to_s.gsub("\\", "\\\\\\\\").gsub("'", "\\\\'")}'" }
+        statement
+          .gsub(/\bUSER '(?:[^'\\]|\\.)*'/) { "USER #{quote.call(configuration_hash[:username])}" }
+          .gsub(/\bPASSWORD '(?:[^'\\]|\\.)*'/) { "PASSWORD #{quote.call(configuration_hash[:password])}" }
+      end
 
       # ignore_tables entries may be String, Regexp, or Proc — === is the contract
       # Rails' own SchemaDumper uses to match them.
