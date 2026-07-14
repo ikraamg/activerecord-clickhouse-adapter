@@ -105,11 +105,14 @@ module ARCompat
   end
 end
 
+require "cases/validations_repair_helper"
+
 module ActiveRecord
   class TestCase < ActiveSupport::TestCase
     include ActiveSupport::Testing::MethodCallAssertions
     include ActiveRecord::Assertions::QueryAssertions
     include ActiveRecord::TestFixtures
+    include ActiveRecord::ValidationsRepairHelper
     include ARCompat::AdapterHelper
     extend ARCompat::AdapterHelper
 

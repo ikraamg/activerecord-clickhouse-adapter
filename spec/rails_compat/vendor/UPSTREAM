@@ -13,6 +13,9 @@ Vendored from rails/rails tag v8.1.3 (activerecord/test/), byte-exact:
 - cases/associations/has_many_associations_test.rb
 - cases/associations/has_one_associations_test.rb
 - cases/associations/has_and_belongs_to_many_associations_test.rb
+- cases/associations/has_many_through_associations_test.rb
+- cases/associations/has_one_through_associations_test.rb
+- cases/validations_repair_helper.rb
 - models/* (every model the vendored cases require, incl. models/dats/*,
   models/sharded/*, models/cpk/*, models/admin/*)
 - fixtures/* (every fixture set the vendored cases declare)

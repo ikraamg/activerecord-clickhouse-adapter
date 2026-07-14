@@ -242,3 +242,41 @@ HasAndBelongsToManyAssociationsTest:
   # `SUM(salary) AS salary` makes HAVING's own SUM(salary) a nested aggregate.
   test_find_scoped_grouped_having: >-
     HAVING resolves the SELECT alias, nesting the aggregate (ILLEGAL_AGGREGATION)
+
+HasManyThroughAssociationsTest:
+  # Established families: query tallies assume transaction SQL the adapter never
+  # issues; cpk models can't ride the single-column prefetch seam; models defined
+  # inside test bodies never get a harness-assigned primary key.
+  test_associating_new: *query_count_tally
+  test_associate_existing: *query_count_tally
+  test_associate_new_by_building: *query_count_tally
+  test_associate_with_create: *query_count_tally
+  test_clear_associations: *query_count_tally
+  test_replace_association: *query_count_tally
+  test_delete_association: *query_count_tally
+  test_cpk_association_build_through_singular: *composite_prefetch
+  test_cpk_stale_target: *composite_prefetch
+  test_loading_cpk_association_with_unpersisted_owner: *composite_prefetch
+  test_composite_primary_key_join_table: *composite_prefetch
+  test_no_pk_join_model_callbacks: *anonymous_model_primary_key
+  test_no_pk_join_table_delete: *anonymous_model_primary_key
+  test_no_pk_join_table_append: *anonymous_model_primary_key
+  test_ordered_has_many_through: *anonymous_model_primary_key
+  test_singleton_has_many_through: *anonymous_model_primary_key
+
+  # ClickHouse cannot resolve unaliased base-table columns once the same table
+  # appears again under an alias (AMBIGUOUS_IDENTIFIER, code 207).
+  test_through_association_with_joins: &self_join_ambiguity >-
+    self-join with unaliased base table raises AMBIGUOUS_IDENTIFIER
+  test_through_association_with_left_joins: *self_join_ambiguity
+  test_through_association_with_through_scope_and_nested_where: *self_join_ambiguity
+  test_has_many_association_through_a_has_many_association_to_self: *self_join_ambiguity
+
+  # Three separate creates land in three parts; the unordered association read
+  # returns parts in scan order, not insertion order.
+  test_has_many_association_through_a_belongs_to_association: >-
+    unordered association read; ClickHouse part-scan order is not insertion order
+
+HasOneThroughAssociationsTest:
+  test_loading_cpk_association_with_unpersisted_owner: *composite_prefetch
+  test_cpk_stale_target: *composite_prefetch

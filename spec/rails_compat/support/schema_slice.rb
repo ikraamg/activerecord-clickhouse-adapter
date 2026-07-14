@@ -17,6 +17,7 @@ module ARCompat
       "countries" => :country_id,
       "countries_treaties" => %i[country_id treaty_id],
       "courses_professors" => nil,
+      "cpk_order_tags" => %i[order_id tag_id],
       "cpk_books" => %i[author_id id],
       "cpk_chapters" => %i[author_id id],
       "cpk_posts" => %i[title author],
@@ -35,25 +36,29 @@ module ARCompat
       1_need_quoting accounts admin_users aircraft articles articles_magazines articles_tags
       attachments audit_logs author_addresses
       author_favorites authors
-      auto_id_tests birds books bulbs cake_designers cars carts
+      auto_id_tests birds books bulbs cake_designers carriers cars carts
       categories categories_posts categorizations chefs citations clothing_items clubs
       cold_jokes colleges colnametests columns
       comment_overlapping_counter_caches comments
       companies computers
       computers_developers contracts countries countries_treaties courses courses_professors
-      cpk_authors cpk_books cpk_chapters cpk_comments cpk_orders cpk_posts cpk_reviews customers
+      cpk_authors cpk_books cpk_chapters cpk_comments cpk_order_tags cpk_orders cpk_posts
+      cpk_reviews cpk_tags customer_carriers customers
       dashboards departments developers
       developers_projects
-      dog_lovers dogs drink_designers edges engines entrants essays funny_jokes having humans
+      dog_lovers dogs drink_designers edges engines enrollments entrants essays families
+      family_trees funny_jokes having humans
       images interests
       invoices jobs jobs_pool kitchens lessons lessons_students line_items magazines mateys
-      members memberships
+      member_details member_types members memberships
       minimalistics minivans nodes non_primary_keys
       numeric_data organizations owners parrots parrots_pirates parrots_treasures people
-      peoples_treasures pets pirates price_estimates professors
+      peoples_treasures pets pets_treasures pirates price_estimates professors
+      program_offerings programs
       post_comments_counts posts projects ratings readers records references rooms
+      sections seminars sessions
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
-      ship_parts ships sinks
+      ship_parts ships shop_accounts sinks
       speedometers sponsors students subscribers subscriptions taggings tags tires topics
       toooooooooooooooooooooooooooooooooo_long_table_names toys treasures treaties trees
       user_comments_counts users warehouse-things weirds wheels zines
@@ -218,6 +223,10 @@ module ARCompat
       end
 
       # shop_id joins the sorting key, so it stays non-nullable (allow_nullable_key is off).
+      connection.create_table :carriers, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+      end
+
       connection.create_table :carts, force: true, order: "(shop_id, id)" do |t|
         t.integer :id, limit: 8
         t.integer :shop_id, limit: 8
@@ -474,6 +483,24 @@ module ARCompat
         t.integer :professor_id, limit: 8
       end
 
+      connection.create_table :cpk_order_tags, force: true, order: "(order_id, tag_id)" do |t|
+        t.integer :order_id, limit: 8
+        t.integer :tag_id, limit: 8
+        t.string :attached_by, null: true
+        t.string :attached_reason, null: true
+      end
+
+      connection.create_table :cpk_tags, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name
+      end
+
+      connection.create_table :customer_carriers, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :customer_id, limit: 8, null: true
+        t.integer :carrier_id, limit: 8, null: true
+      end
+
       connection.create_table :dashboards, force: true, order: "dashboard_id" do |t|
         t.string :dashboard_id
         t.string :name, null: true
@@ -526,6 +553,23 @@ module ARCompat
         t.string :category_id, null: true
         t.string :author_id, null: true
         t.integer :book_id, limit: 8, null: true
+      end
+
+      connection.create_table :enrollments, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :program_id, limit: 8, null: true
+        t.integer :member_id, limit: 8, null: true
+      end
+
+      connection.create_table :families, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+      end
+
+      connection.create_table :family_trees, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :family_id, limit: 8, null: true
+        t.integer :member_id, limit: 8, null: true
+        t.string :token, null: true
       end
 
       connection.create_table :funny_jokes, force: true, order: "id" do |t|
@@ -614,6 +658,18 @@ module ARCompat
       end
 
       # Upstream's type column is an integer backed by an enum (STI dark corner).
+      connection.create_table :member_details, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :member_id, limit: 8, null: true
+        t.integer :organization_id, limit: 8, null: true
+        t.string :extra_data, null: true
+      end
+
+      connection.create_table :member_types, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
       connection.create_table :memberships, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.datetime :joined_on, precision: 6, null: true
@@ -741,6 +797,13 @@ module ARCompat
         t.datetime :updated_at, precision: 6
       end
 
+      connection.create_table :pets_treasures, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :treasure_id, limit: 8, null: true
+        t.integer :pet_id, limit: 8, null: true
+        t.string :rainbow_color, null: true
+      end
+
       connection.create_table :pirates, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :catchphrase, null: true
@@ -794,6 +857,18 @@ module ARCompat
         t.integer :first_post_id, limit: 8, null: true
       end
 
+      connection.create_table :program_offerings, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :club_id, limit: 8, null: true
+        t.integer :program_id, limit: 8, null: true
+        t.datetime :start_date, precision: 6, null: true
+      end
+
+      connection.create_table :programs, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
       connection.create_table :professors, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name
@@ -815,6 +890,25 @@ module ARCompat
 
       connection.create_table :records, force: true, order: "id" do |t|
         t.integer :id, limit: 8
+      end
+
+      connection.create_table :sections, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :short_name, null: true
+        t.integer :session_id, limit: 8, null: true
+        t.integer :seminar_id, limit: 8, null: true
+      end
+
+      connection.create_table :seminars, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
+      connection.create_table :sessions, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.date :start_date, null: true
+        t.date :end_date, null: true
+        t.string :name, null: true
       end
 
       connection.create_table :sharded_blogs, force: true, order: "id" do |t|
@@ -869,6 +963,12 @@ module ARCompat
         t.string :name, null: true
         t.integer :ship_id, limit: 8, null: true
         t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :shop_accounts, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :customer_id, limit: 8, null: true
+        t.integer :customer_carrier_id, limit: 8, null: true
       end
 
       connection.create_table :ships, force: true, order: "id" do |t|
