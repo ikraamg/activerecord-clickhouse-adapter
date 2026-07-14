@@ -130,6 +130,11 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | Narrowing `Nullable(T)` → `T` via MODIFY COLUMN fails on stored NULLs (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, code 349, surfacing as UNFINISHED mutation 341) — a backfill must run first | Iteration 21 probe |
 | `SHOW CREATE` masks dictionary source passwords as `PASSWORD '[HIDDEN]'` — a structure.sql dump replayed verbatim recreates a dictionary that can never authenticate | Iteration 21 probe |
 | `ALTER TABLE ... RENAME COLUMN / MODIFY COLUMN <type> / ADD INDEX / DROP INDEX / COMMENT COLUMN / MODIFY COMMENT` all work on 25.8 with the documented grammar | Iteration 21 probe |
+| ClickHouse 26.6 refuses `MODIFY COLUMN Nullable(T) → T` without a `DEFAULT` clause in the statement (BAD_ARGUMENTS, code 36) — and with one, stored NULLs silently become that default; `DEFAULT defaultValueOfTypeName('T')` + `REMOVE DEFAULT` round-trips to the pre-26.6 shape | Iteration 22 probe (26.6.1) |
+| ClickHouse 26.x flips the `async_insert` server default to 1, so `getSetting('async_insert')` is no longer false on an unconfigured connection — assert `system.settings.changed = 0` instead | Iteration 22 probe (26.6.1) |
+| ClickHouse 26.6 nulls LowCardinality keys under `group_by_use_nulls` (25.8 kept the type default for ROLLUP total rows) — LowCardinality totals now arrive keyed nil like every other type | Iteration 22 probe (26.6.1) |
+| ClickHouse 26.6 adds the `Geometry` and `QBit` type families and removes `Object` (the old JSON implementation) from `system.data_type_families` | Iteration 22 probe (26.6.1) |
+| After a lazy `String → Nullable(String)` conversion, 25.8's `IS NULL` reads a stale `.null` subcolumn for pre-conversion parts (reports NULL for real values until OPTIMIZE); `SETTINGS optimize_functions_to_subcolumns = 0` reads the true values — mutations are unaffected | Iteration 22 probe (25.8.28) |
 
 Local corpora:
 
@@ -508,6 +513,33 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     structure.sql still carries them. The dumper also finally honors
     `ignore_tables` for materialized views and dictionaries.
 
+50. **`perform_query` speaks both Rails contracts** *(Iteration 22)*: Rails main
+    (8.2) replaced the seven-argument `perform_query` with a two-argument form
+    taking a `QueryIntent`; the adapter defines whichever signature matches the
+    loaded Rails (detected by `QueryIntent`'s existence at load time) and both
+    delegate to one `execute_wire_query` body. Edge-only drift in the vendored
+    8.1.3 corpus text (not adapter behavior) lives in `skips_edge.yml`, merged
+    into the manifest only when running against >= 8.2.0.alpha.
+
+51. **CI truths the local environment can't see** *(Iteration 22)*: RuboCop's
+    `AllCops: Exclude` replaces the default exclusions unless `inherit_mode`
+    merges them — in CI, where bundler installs into `vendor/bundle` inside the
+    workspace, that meant scanning installed gems' own rubocop configs. And
+    `Hash#inspect` renders `{key => value}` before Ruby 3.4, so the schema
+    dumper formats the `settings:` option itself instead of trusting `inspect`.
+
+50. **`perform_query` speaks both adapter contracts** *(Iteration 22)*: Rails main
+    (8.2.0.alpha) replaced the positional
+    `perform_query(conn, sql, binds, casted, prepare:, notification_payload:, batch:)`
+    with `perform_query(conn, intent)` carrying a `QueryIntent`. The adapter defines
+    whichever signature matches at load time (guarded on
+    `ConnectionAdapters.const_defined?(:QueryIntent)`) and both delegate to one
+    `execute_wire_query` body — no monkeypatch, no runtime branching per query.
+    `explain` switched from the removed-on-main `internal_exec_query` to
+    `select_all`, which both versions provide. Upstream drift in the *vendored 8.1.3
+    test text* (not adapter behavior) lives in `skips_edge.yml`, merged into the
+    manifest only when `ActiveRecord.gem_version >= 8.2.0.alpha`.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -788,6 +820,19 @@ dictionaries now round-trip schema.rb and structure.sql without leaking
 credentials (ledger #48) and no longer masquerade as BASE TABLEs (ledger #49).
 Fixed in passing: the dumper now honors `ignore_tables` for materialized views.
 Harness: **2,226 runs, 0 failures, 177 skips**. Suite: 487 examples green.
+
+**Phase 6 (cont.) — CI matrix hardening after the first real Actions run.**
+*(landed — Iteration 22)* Pushed to the private GitHub remote; four of six matrix
+jobs failed and each exposed an environment truth (ledger #50/#51, §2): RuboCop
+scanning CI's `vendor/bundle` (Exclude now merges with the defaults), pre-3.4
+`Hash#inspect` in the dumped `settings:` option (rendered by hand now), Rails
+main's `QueryIntent` seam (dual-contract `perform_query` + `skips_edge.yml` for
+pinned-corpus text drift, harness green on edge at 2,227 runs / 179 skips), and
+ClickHouse 26.6 drift — MODIFY COLUMN narrowing needs an in-statement DEFAULT
+(placeholder `defaultValueOfTypeName` + REMOVE DEFAULT, with an explicit
+stored-NULLs guard), async_insert's server default flipped on, LowCardinality
+ROLLUP totals now key nil, Geometry/QBit added and Object removed from the type
+catalog. Suite: 490 examples green on 25.8 and 26.6.
 
 ## 7. Spec strategy (three tiers)
 
