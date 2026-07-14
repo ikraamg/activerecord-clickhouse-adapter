@@ -183,6 +183,10 @@ InsertAllTest:
   test_insert_all_and_upsert_all_works_with_composite_primary_keys_when_unique_by_is_not_provided: *no_upsert
   test_upsert_all_implicitly_sets_primary_keys_when_nil: >-
     upsert_all needs conflict semantics, which the adapter honestly rejects
+  # Passed before Iteration 23 only via silent NULL->0 coercion, which
+  # input_format_null_as_default = 0 now turns into an honest NotNullViolation.
+  test_insert_all_implicitly_sets_primary_keys_when_nil: >-
+    no autoincrement — the server cannot populate an explicit NULL id, it raises
 
 BasicsTest:
   # The adapter deliberately reports no primary key from the server (ledger #7); the
@@ -280,3 +284,45 @@ HasManyThroughAssociationsTest:
 HasOneThroughAssociationsTest:
   test_loading_cpk_association_with_unpersisted_owner: *composite_prefetch
   test_cpk_stale_target: *composite_prefetch
+
+ActiveRecord::Migration::ChangeSchemaTest:
+  test_keeping_default_and_notnull_constraints_on_change: >-
+    raw "UPDATE t SET ..." statement; ClickHouse 25.8 only mutates via ALTER TABLE ... UPDATE
+  test_create_table_with_limits: &string_limit >-
+    ClickHouse String has no length limit; limit: is accepted but not persisted
+  test_column_exists_with_definition: *string_limit
+  test_add_column_with_primary_key_attribute: >-
+    the sorting key is fixed at CREATE TABLE; a primary-key column cannot be ALTERed in
+
+ActiveRecord::Migration::ColumnsTest:
+  test_removing_and_renaming_column_preserves_custom_primary_key: >-
+    primary_keys returns [] by design (PLAN.md §5) — ClickHouse PRIMARY KEY is an index
+    prefix, not identity; models declare their key client-side
+  test_remove_column_with_multi_column_index: >-
+    ClickHouse refuses to drop a column a skip index depends on, so remove_column
+    drops the index too (MySQL keeps it on the remaining column)
+  test_change_column_nullability: &non_nullable_default >-
+    columns are non-Nullable by default (ClickHouse idiom); Rails expects nullable
+  test_change_column_null_false: >-
+    partial insert omits the column and ClickHouse fills the type default; no
+    NOT NULL violation is possible for an unsent column
+
+ActiveRecord::Migration::IndexTest:
+  test_unique_index_exists: &no_unique_indexes >-
+    ClickHouse has no unique indexes; unique: is accepted but unenforceable, so
+    index_exists?(unique: true) honestly reports false
+
+ActiveRecord::Migration::ReferencesStatementsTest:
+  test_creates_named_unique_index: *no_unique_indexes
+
+ActiveRecord::Migration::ReferencesIndexTest:
+  test_creates_index_with_options: *no_unique_indexes
+
+ActiveRecord::Migration::InvalidOptionsTest:
+  # The exact option lists differ by design: column/table options gain ClickHouse
+  # keys (codec:, engine:, order:, ...) and index options gain granularity:.
+  test_add_column_with_invalid_options: &extended_option_list >-
+    valid-keys message differs; ClickHouse extends the abstract option list
+  test_add_reference_with_invalid_options: *extended_option_list
+  test_create_table_with_invalid_options: *extended_option_list
+  test_add_index_with_invalid_options: *extended_option_list

@@ -57,6 +57,35 @@ ActiveRecord::Base.configurations = {
 }
 ActiveRecord::Base.establish_connection(:arunit)
 
+module ARCompat
+  # Harness-side translation rule (PLAN.md §5 #14, same family as the schema-slice
+  # rules): upstream migration suites create scratch tables inline with Rails'
+  # implicit autoincrement id and no sorting key. Mirroring the schema slice, an
+  # implicit id becomes an explicit Int64 column that doubles as the sorting key
+  # (client-side prefetch populates it); id: false tables get an empty sorting key.
+  # The adapter itself stays strict for real consumers.
+  module InlineDDLDefaults
+    def create_table(table_name, **options, &block)
+      internal = [ActiveRecord::Base.schema_migrations_table_name,
+                  ActiveRecord::Base.internal_metadata_table_name].include?(table_name.to_s)
+      return super if internal || options.key?(:order)
+
+      id = options.fetch(:id, :bigint)
+      pk = options.fetch(:primary_key) { ActiveRecord::Base.get_primary_key(table_name.to_s.singularize) }
+      return super(table_name, order: "tuple()", **options, &block) if id == false || pk.is_a?(Array)
+
+      id_type = id == :primary_key ? :bigint : id
+      super(table_name, **options.merge(id: false, order: quote_column_name(pk))) do |t|
+        # primary_key: is DDL-inert here but lets Rails raise its dedicated
+        # "can't redefine the primary key column" error on a duplicate.
+        t.column pk, id_type, null: false, primary_key: true
+        block&.call(t)
+      end
+    end
+  end
+end
+ActiveRecord::Base.lease_connection.class.prepend(ARCompat::InlineDDLDefaults)
+
 # Upstream test/support/global_config.rb runs the suites with these settings.
 ActiveRecord.raise_on_missing_required_finder_order_columns = true
 ActiveRecord.raise_on_assign_to_attr_readonly = true
@@ -153,6 +182,17 @@ module ActiveRecord
 
     def quote_table_name(name)
       ActiveRecord::Base.adapter_class.quote_table_name(name)
+    end
+
+    # Upstream defines these in test/cases/test_case.rb.
+    def assert_column(model, column_name, msg = nil)
+      model.reset_column_information
+      assert_includes model.column_names, column_name.to_s, msg
+    end
+
+    def assert_no_column(model, column_name, msg = nil)
+      model.reset_column_information
+      assert_not_includes model.column_names, column_name.to_s, msg
     end
 
     def capture_sql(include_schema: false)
