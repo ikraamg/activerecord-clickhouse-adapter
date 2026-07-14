@@ -183,6 +183,18 @@ module ActiveRecord
         def index_parts(index)
           super + ["granularity: #{index.granularity}"]
         end
+
+        # Hash#inspect renders {:key=>value} before Ruby 3.4; emit the modern literal
+        # so the settings: option dumps identically on every supported Ruby.
+        def format_options(options)
+          options.map { |key, value| "#{key}: #{format_option_value(value)}" }.join(", ")
+        end
+
+        def format_option_value(value)
+          return value.inspect unless value.is_a?(Hash)
+
+          "{#{value.map { |key, entry| "#{key}: #{entry.inspect}" }.join(", ")}}"
+        end
       end
     end
   end
