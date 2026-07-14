@@ -28,7 +28,7 @@ module ARCompat
   SKIP_OVERLAYS.each do |overlay, applies|
     next unless applies.call
 
-    YAML.load_file(File.expand_path("../../#{overlay}", __dir__)).each do |suite, tests|
+    YAML.load_file(File.expand_path("../../#{overlay}", __dir__), aliases: true).each do |suite, tests|
       (SKIPS[suite] ||= {}).merge!(tests)
     end
   end
