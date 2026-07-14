@@ -8,3 +8,8 @@ HasManyAssociationsTest:
 ActiveRecord::ConnectionAdapters::QuotingTest:
   test_quote_as_mb_chars_no_column: >-
     Rails main removed ActiveSupport::Multibyte::Chars, which the pinned test constructs
+ActiveRecord::Migration::ColumnsTest:
+  test_change_column: &fetch_cast_type_removed >-
+    Rails main removed Column#fetch_cast_type (now cast_type), which the pinned test calls
+ActiveRecord::Migration::ChangeSchemaTest:
+  test_create_table_with_defaults: *fetch_cast_type_removed
