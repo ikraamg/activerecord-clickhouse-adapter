@@ -1,18 +1,19 @@
-# Iteration 24: core cutover support, release mechanics, or the next corpus
+# Iteration 25: release mechanics or the next corpus
 
-> Status at handoff: the migration corpus landed (Iteration 23). 15 of Rails'
-> `migration/` sub-suites run byte-exact — 297 runs, 0 failures, 24 manifest
-> skips. The alter surface is now Rails-contract: `add_index` accepts the full
-> abstract option list (only `using:`/`granularity:` shape the DDL, ledger
-> #52), `remove_index` delegates to `index_name_for_remove` (matches by
-> columns, refuses name-shaped strings), `rename_index`/`rename_table`/
-> `rename_column` rename auto-named indexes, `remove_column` drops dependent
-> skip indexes, and `change_column` has replace-the-definition default
-> semantics. Two behavior changes to know: `supports_datetime_with_precision?`
-> is now true, so bare `t.datetime` produces `DateTime64(6)` not `(3)` (ledger
-> #53), and inserting explicit NULL into a non-Nullable column now raises
-> `NotNullViolation` (`input_format_null_as_default = 0`). 516 rspec examples
-> green, rubocop clean.
+> Status at handoff: Iteration 24 repaired the matrix and derisked the cutover.
+> The two CI failures from the Iteration 23 push are fixed: Rails main renamed
+> `Column#fetch_cast_type` → `cast_type` (pinned-text entries in
+> `skips_edge.yml`), and ClickHouse 26.6's in-statement-DEFAULT rule reached
+> `change_column` through the migration corpus (same placeholder round-trip as
+> `change_column_null`, stored-NULLs guard included, proven live on 26.6.1).
+> Core cutover status: in `~/Documents/GitHub/core.worktrees/adapter-port` all
+> 14 sink migrations run verbatim on a fresh database and every
+> ClickHouse-touching spec is green (12 proof + 100 request + 184 model/task
+> examples). The worktree gained one core-side fix: the four append-only sink
+> models declare `self.primary_key = nil` so an early pk resolution against the
+> unwired Postgres pool can't cache a guessed `"id"` (latent with the incumbent
+> gem too — worth carrying into the real cutover PR). 524 rspec examples green
+> on 25.8, authored tier green on 26.6, rubocop clean.
 
 ## Scope
 
@@ -20,13 +21,13 @@ Pick one (value order):
 
 1. **0.1.0 release mechanics** if Ikraam green-lights: tag, `gem push` (needs
    credentials — stop and ask). CI is green across the matrix.
-2. **Core cutover support:** the `~/Documents/GitHub/core.worktrees/adapter-port`
-   worktree holds the uncommitted core-side edits; rerunning its migration
-   corpus after Iteration 23's alter-surface hardening would derisk the cutover.
+2. **Core cutover PR:** the worktree edits (Gemfile swap, `ssl_verify: false`,
+   `migration_context` rename, sink `primary_key = nil`) are ready to become
+   the real cutover PR on core once Ikraam wants it opened.
 3. **Next corpus:** `autosave_association_test`, the `scoping` suites, or
    `migration_test.rb` itself (the big top-level file — the sub-suites are done).
 
-## Watch out for (carried forward + new)
+## Watch out for (carried forward)
 
 - `t.datetime` now defaults to precision 6. Any consumer schema diff noise of
   `DateTime64(3)` → `DateTime64(6)` is this, not a bug; explicit `precision: 3`
@@ -41,10 +42,10 @@ Pick one (value order):
 - Rails main runs need the edge bundle: `RAILS_SOURCE=edge BUNDLE_FROZEN=false
   bundle install` re-resolves against `../rails-main` (all three path gems);
   plain `bundle install` restores the release lock afterwards.
-- `change_column_null(…, false)` refuses stored NULLs without a backfill
-  default; with a default it backfills via `mutations_sync = 1` first, then
-  narrows with a placeholder `DEFAULT defaultValueOfTypeName(…)` it removes
-  right after (§2).
+- Narrowing to non-Nullable (via `change_column_null` *or* `change_column`)
+  refuses stored NULLs and rides a placeholder
+  `DEFAULT defaultValueOfTypeName(…)` it removes right after (§2) — 26.6
+  requires the in-statement DEFAULT, 25.8 tolerates it.
 - Never assert `getSetting('async_insert')` is false — 26.x flipped the server
   default. Assert `system.settings.changed = 0` for "the adapter didn't touch
   it".
@@ -84,4 +85,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 25.
+read/write path was touched, this file rewritten for Iteration 26.

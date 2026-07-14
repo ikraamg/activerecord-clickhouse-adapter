@@ -867,6 +867,23 @@ dialect gaps (no unique indexes, String has no limit, non-Nullable column
 default, raw UPDATE statements, immutable sorting keys). Migration corpus:
 **297 runs, 0 failures, 24 skips**. Suite: 516 examples green.
 
+**Phase 6 (cont.) — matrix repair + core-cutover derisking.** *(landed —
+Iteration 24)* The Iteration 23 push failed two matrix jobs: AR edge (Rails
+main renamed `Column#fetch_cast_type` → `cast_type`; two pinned-text entries in
+`skips_edge.yml`) and ClickHouse latest (26.6's in-statement-DEFAULT rule now
+reached `change_column` through the migration corpus — the same
+`defaultValueOfTypeName` placeholder + `REMOVE DEFAULT` round-trip
+`change_column_null` gained in Iteration 22 applies, guarded by the stored-NULLs
+check; three new authored specs, verified live on 26.6.1). Cutover derisking in
+the `core.worktrees/adapter-port` worktree against the hardened alter surface:
+all 14 sink migrations run verbatim on a fresh database; proof spec (12), admin
+request specs (100), and model/task specs (184) all green. One core-side latent
+bug found and fixed in the worktree (present with the incumbent gem too):
+sink models resolve `primary_key` against the unwired Postgres pool before the
+sink connects, caching a guessed `"id"` that later breaks `create!` — the four
+append-only sink models now declare `self.primary_key = nil`. Suite: 524
+examples green on 25.8 and the authored tier green on 26.6.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per
