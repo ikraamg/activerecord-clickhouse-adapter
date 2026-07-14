@@ -64,15 +64,22 @@ module ActiveRecord
           execute("ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause} #{definition}")
         end
 
-        # Narrowing to non-Nullable fails on stored NULLs (code 349), so the Rails
-        # backfill default runs first as a synchronous mutation.
+        # Narrowing to non-Nullable would silently rewrite stored NULLs to the type
+        # default (26.6+) or fail mid-mutation (25.8, code 349), so the Rails backfill
+        # default runs first as a synchronous mutation and is required when NULLs exist.
         def change_column_null(table_name, column_name, null, default = nil)
           column = columns(table_name).find { |candidate| candidate.name == column_name.to_s }
           raise ArgumentError, "no such column #{column_name} in #{table_name}" unless column
 
-          backfill_nulls(table_name, column_name, default) if !null && !default.nil?
           inner_type = column.sql_type.sub(/\ANullable\((.*)\)\z/m, '\1')
-          change_column(table_name, column_name, null ? "Nullable(#{inner_type})" : inner_type)
+          return change_column(table_name, column_name, "Nullable(#{inner_type})") if null
+
+          if default.nil?
+            assert_no_stored_nulls(table_name, column_name)
+          else
+            backfill_nulls(table_name, column_name, default)
+          end
+          narrow_column(table_name, column_name, inner_type, column)
         end
 
         # The insert-trigger half of the OLAP ingest-raw/read-aggregated idiom. A TO
@@ -325,6 +332,38 @@ module ActiveRecord
         end
 
         private
+
+        # ClickHouse 26.6+ refuses Nullable(T) -> T without a DEFAULT clause in the
+        # MODIFY COLUMN itself (BAD_ARGUMENTS, probed 2026-07-14). When the column has
+        # no real default, the type's own default rides along as a placeholder and is
+        # removed right after, restoring the pre-26.6 shape.
+        def narrow_column(table_name, column_name, inner_type, column)
+          default_expression =
+            column.default_function || (column.default.nil? ? nil : quote(column.default))
+          placeholder = default_expression.nil?
+          default_expression ||= "defaultValueOfTypeName(#{quote(inner_type)})"
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            MODIFY COLUMN #{quote_column_name(column_name)} #{inner_type} DEFAULT #{default_expression}
+          SQL
+          change_column_default(table_name, column_name, nil) if placeholder
+        end
+
+        # The narrowing MODIFY's DEFAULT clause would rewrite stored NULLs silently;
+        # Rails semantics say a narrow over NULLs without a backfill default is an error.
+        # 25.8 serves a stale .null subcolumn for parts written before the column went
+        # Nullable (probed 2026-07-14), so the count must read the real values.
+        def assert_no_stored_nulls(table_name, column_name)
+          nulls = select_value(<<~SQL.squish)
+            SELECT count() FROM #{quote_table_name(table_name)}
+            WHERE #{quote_column_name(column_name)} IS NULL
+            SETTINGS optimize_functions_to_subcolumns = 0
+          SQL
+          return if nulls.to_i.zero?
+
+          raise ActiveRecordError, "cannot make #{table_name}.#{column_name} non-nullable: " \
+                                   "#{nulls} stored NULLs; pass a default to backfill them"
+        end
 
         def backfill_nulls(table_name, column_name, default)
           with_request_settings(mutations_sync: 1) do

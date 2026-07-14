@@ -35,8 +35,11 @@ RSpec.describe "ClickHouse async inserts" do
     expect(async_connection.execute("SELECT count() FROM async_probe WHERE id = 1").rows).to eq([[1]])
   end
 
-  it "keeps async_insert off without the config" do
+  # The server default flipped to on in 26.x, so "off" is not assertable across
+  # versions — what matters is that an unconfigured connection never overrides it.
+  it "does not override the server default without the config" do
     plain = ActiveRecord::Base.lease_connection
-    expect(plain.select_value("SELECT getSetting('async_insert')")).to be(false)
+    changed = plain.select_value("SELECT changed FROM system.settings WHERE name = 'async_insert'")
+    expect(changed).to eq(0)
   end
 end

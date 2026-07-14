@@ -96,10 +96,11 @@ RSpec.describe "ClickHouse OLAP relation extensions" do
       expect(counts[[0, nil]]).to eq(7)
     end
 
-    # group_by_use_nulls does not null LowCardinality keys (probed 2026-07-13): the
-    # total row keeps the type default. Documented, not hidden — callers grouping by
-    # LowCardinality columns must fetch the empty-string key.
-    it "keys totals with the type default for LowCardinality group columns" do
+    # group_by_use_nulls does not null LowCardinality keys on 25.8 (probed
+    # 2026-07-13) — the total row keeps the type default — but 26.6 nulls them like
+    # every other type (probed 2026-07-14). Callers grouping by LowCardinality
+    # columns must check both keys until 25.8 support ends.
+    it "keys totals with the type default or nil for LowCardinality group columns" do
       connection = ActiveRecord::Base.lease_connection
       connection.create_table("olap_lc_probe", force: true, order: "kind") do |t|
         t.string :kind, low_cardinality: true
@@ -112,7 +113,8 @@ RSpec.describe "ClickHouse OLAP relation extensions" do
 
         def self.name = "OlapLcProbe"
       end
-      expect(lc_model.group(:kind).rollup.count.fetch("")).to eq(3)
+      counts = lc_model.group(:kind).rollup.count
+      expect(counts.fetch("") { counts.fetch(nil) }).to eq(3)
     ensure
       ActiveRecord::Base.lease_connection.drop_table("olap_lc_probe", if_exists: true)
     end

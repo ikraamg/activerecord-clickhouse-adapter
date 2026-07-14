@@ -287,6 +287,25 @@ RSpec.describe "ClickHouse schema statements" do
         connection.change_column_null("alter_probe", :label, false, "filled")
         expect(connection.select_value("SELECT label FROM alter_probe WHERE id = 2")).to eq("filled")
       end
+
+      it "leaves no placeholder default behind after narrowing" do
+        connection.change_column_null("alter_probe", :label, true)
+        connection.change_column_null("alter_probe", :label, false)
+        expect(column(:label).default).to be_nil
+      end
+
+      it "keeps the column's real default through a narrow" do
+        connection.change_column("alter_probe", :label, :string, null: true, default: "untitled")
+        connection.change_column_null("alter_probe", :label, false)
+        expect(column(:label).default).to eq("untitled")
+      end
+
+      it "refuses to narrow over stored NULLs without a backfill default" do
+        connection.change_column_null("alter_probe", :label, true)
+        connection.execute("INSERT INTO alter_probe VALUES (2, NULL, 20)")
+        expect { connection.change_column_null("alter_probe", :label, false) }
+          .to raise_error(ActiveRecord::ActiveRecordError, /stored NULLs/)
+      end
     end
 
     describe "#change_column_comment" do

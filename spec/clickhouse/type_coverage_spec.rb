@@ -80,6 +80,22 @@ RSpec.describe "ClickHouse type family coverage" do
     ]
   end
 
+  # Families added after 25.8, the oldest supported server; absent there, uncast here.
+  let(:newer_server_families) do
+    %w[
+      Geometry
+      QBit
+    ]
+  end
+
+  # Families 25.8 still lists that newer servers removed (Object died with the old
+  # JSON implementation); kept in documented_unsupported for the 25.8 run.
+  let(:retired_server_families) do
+    %w[
+      Object
+    ]
+  end
+
   let(:live_families) do
     connection.select_values(
       "SELECT name FROM system.data_type_families WHERE alias_to = '' ORDER BY name"
@@ -87,14 +103,15 @@ RSpec.describe "ClickHouse type family coverage" do
   end
 
   it "has no unaccounted live type families" do
-    expect(live_families - cast_supported - documented_unsupported).to eq([])
+    expect(live_families - cast_supported - documented_unsupported - newer_server_families).to eq([])
   end
 
   it "does not list a family as both supported and unsupported" do
-    expect(cast_supported & documented_unsupported).to eq([])
+    expect(cast_supported & (documented_unsupported + newer_server_families)).to eq([])
   end
 
   it "covers every live non-alias family exactly once" do
-    expect((cast_supported + documented_unsupported).sort).to eq(live_families.sort)
+    accounted = cast_supported + documented_unsupported + newer_server_families
+    expect(accounted.sort).to eq((live_families | newer_server_families | retired_server_families).sort)
   end
 end

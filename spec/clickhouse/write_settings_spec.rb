@@ -53,7 +53,9 @@ RSpec.describe "ClickHouse per-write settings" do
 
   it "leaves the connection's settings untouched afterwards" do
     model.settings(async_insert: 1).insert_all!([{ id: 8 }])
-    expect(ActiveRecord::Base.lease_connection.select_value("SELECT getSetting('async_insert')")).to be(false)
+    changed = ActiveRecord::Base.lease_connection
+                                .select_value("SELECT changed FROM system.settings WHERE name = 'async_insert'")
+    expect(changed).to eq(0)
   end
 
   it "rejects unsafe setting names before they reach the wire" do
