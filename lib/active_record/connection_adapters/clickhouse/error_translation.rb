@@ -19,19 +19,31 @@ module ActiveRecord
           516 => AuthenticationError
         }.freeze
 
+        # Code 53 is TYPE_MISMATCH at large; only its NULL-insert shape (surfaced by
+        # input_format_null_as_default = 0) is a Rails not-null violation.
+        NULL_INSERT_MESSAGE = /Cannot insert NULL value into a column of type/
+
         private
 
         def translate_exception(exception, message:, sql:, binds:)
-          if exception.is_a?(HTTPConnection::ExecutionError)
-            klass = EXCEPTION_CLASS_BY_CODE[exception.code]
-            return klass.new(message, sql: sql, binds: binds) if klass
-          end
+          server_error = server_exception_class(exception)
+          return server_error.new(message, sql: sql, binds: binds) if server_error
 
           case exception
           when Errno::ECONNREFUSED, SocketError, Net::OpenTimeout, Net::ReadTimeout
             ActiveRecord::ConnectionNotEstablished.new(exception)
           else
             super
+          end
+        end
+
+        def server_exception_class(exception)
+          return nil unless exception.is_a?(HTTPConnection::ExecutionError)
+
+          if exception.code == 53 && exception.message.match?(NULL_INSERT_MESSAGE)
+            ActiveRecord::NotNullViolation
+          else
+            EXCEPTION_CLASS_BY_CODE[exception.code]
           end
         end
       end

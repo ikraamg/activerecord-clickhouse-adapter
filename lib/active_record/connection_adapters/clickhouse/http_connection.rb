@@ -187,6 +187,10 @@ module ActiveRecord
             # ClickHouse fills non-matched outer-join columns with type defaults (0, '');
             # every other AR adapter returns SQL NULLs, so default to standard semantics.
             join_use_nulls: @config.fetch(:join_use_nulls, 1),
+            # By default the server coerces NULL to the type default on insert into a
+            # non-Nullable column — silent data corruption by AR semantics. Off, the
+            # insert raises (code 53, probed 2026-07-14) and maps to NotNullViolation.
+            input_format_null_as_default: 0,
             # Server gzips responses ~3.6x smaller; Net::HTTP decompresses transparently
             # (it sends Accept-Encoding: gzip by default). Probed 2026-07-12, PLAN.md §2.
             enable_http_compression: @config.fetch(:compression, true) ? 1 : 0
