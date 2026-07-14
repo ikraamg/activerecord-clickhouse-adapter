@@ -46,6 +46,24 @@ module ActiveRecord
       class SchemaCreation < ConnectionAdapters::SchemaCreation
         private
 
+        def visit_TableDefinition(o)
+          stamp_on_cluster(super, o.name)
+        end
+
+        def visit_AlterTable(o)
+          stamp_on_cluster(super, o.name)
+        end
+
+        # ON CLUSTER renders directly after the table name; the first mention is the
+        # one following CREATE/ALTER TABLE.
+        def stamp_on_cluster(sql, table_name)
+          clause = @conn.on_cluster_clause
+          return sql if clause.empty?
+
+          quoted = quote_table_name(table_name)
+          sql.sub("TABLE #{quoted} ", "TABLE #{quoted}#{clause} ")
+        end
+
         # ClickHouse nullability lives in the type (Nullable/LowCardinality wrappers),
         # not in NOT NULL constraints, and MergeTree requires an ORDER BY clause.
         def visit_ColumnDefinition(o)

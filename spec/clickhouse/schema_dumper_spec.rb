@@ -25,10 +25,21 @@ RSpec.describe "ClickHouse schema dumper" do
       t.column :uid, "UUID"
       t.index :note, name: "idx_note", using: "bloom_filter", granularity: 4
     end
+    # Projections get their own plain MergeTree: ReplacingMergeTree refuses ADD
+    # PROJECTION unless deduplicate_merge_projection_mode is loosened (code 344).
+    conn.drop_table("dump_probe_readings", if_exists: true)
+    conn.create_table("dump_probe_readings", order: "id") do |t|
+      t.integer :id, limit: 8
+      t.string :kind
+      t.integer :device_id, limit: 8
+    end
+    conn.add_projection("dump_probe_readings", "by_kind", order: "kind")
+    conn.add_projection("dump_probe_readings", "daily_counts", select: "device_id, count()", group: "device_id")
   end
 
   after(:all) do
     ActiveRecord::Base.lease_connection.drop_table("dump_probe_events", if_exists: true)
+    ActiveRecord::Base.lease_connection.drop_table("dump_probe_readings", if_exists: true)
   end
 
   it "dumps the table with its ClickHouse options and no synthetic id" do
@@ -72,13 +83,23 @@ RSpec.describe "ClickHouse schema dumper" do
     expect(dump).to include('t.index ["note"], name: "idx_note", using: "bloom_filter", granularity: 4')
   end
 
+  it "dumps sort projections with their ORDER BY" do
+    expect(dump).to include('add_projection "dump_probe_readings", "by_kind", select: "*", order: "kind"')
+  end
+
+  it "dumps aggregate projections with their GROUP BY" do
+    expect(dump).to include(
+      'add_projection "dump_probe_readings", "daily_counts", select: "device_id, count()", group: "device_id"'
+    )
+  end
+
   context "when the dump is loaded back and re-dumped" do
     def isolated_dump
       ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection_pool, StringIO.new).string
     end
 
     around do |example|
-      ActiveRecord::SchemaDumper.ignore_tables = [/\A(?!dump_probe_events\z)/]
+      ActiveRecord::SchemaDumper.ignore_tables = [/\A(?!dump_probe_(?:events|readings)\z)/]
       example.run
     ensure
       ActiveRecord::SchemaDumper.ignore_tables = []
@@ -87,6 +108,7 @@ RSpec.describe "ClickHouse schema dumper" do
     it "round-trips byte-identically" do
       first_dump = isolated_dump
       ActiveRecord::Base.lease_connection.drop_table("dump_probe_events")
+      ActiveRecord::Base.lease_connection.drop_table("dump_probe_readings")
       eval(first_dump) # rubocop:disable Security/Eval -- loading the dump is the point
       expect(isolated_dump).to eq(first_dump)
     end

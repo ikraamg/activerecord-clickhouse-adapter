@@ -1,0 +1,28 @@
+<!-- Embedded Keeper so ON CLUSTER DDL works on the single test node: distributed DDL
+     needs a coordination layer even when the `default` cluster has one replica. -->
+<clickhouse>
+  <keeper_server>
+    <tcp_port>9181</tcp_port>
+    <server_id>1</server_id>
+    <coordination_settings>
+      <force_sync>false</force_sync>
+    </coordination_settings>
+    <raft_configuration>
+      <server>
+        <id>1</id>
+        <hostname>localhost</hostname>
+        <port>9234</port>
+      </server>
+    </raft_configuration>
+  </keeper_server>
+  <zookeeper>
+    <node>
+      <host>localhost</host>
+      <port>9181</port>
+    </node>
+  </zookeeper>
+  <macros>
+    <shard>01</shard>
+    <replica>replica1</replica>
+  </macros>
+</clickhouse>

@@ -47,6 +47,14 @@ module ActiveRecord
         @lock.synchronize { @raw_connection&.ping } || false
       end
 
+      # With cluster: configured, schema DDL is stamped ON CLUSTER so every replica
+      # runs it through the distributed DDL queue.
+      def cluster = @config[:cluster]
+
+      def on_cluster_clause
+        cluster ? " ON CLUSTER #{quote_table_name(cluster)}" : ""
+      end
+
       def disconnect!
         super
         @raw_connection&.close

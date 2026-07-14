@@ -23,6 +23,7 @@ services:
       - ./spec/support/tls/https.xml:/etc/clickhouse-server/config.d/https.xml:ro
       - ./spec/support/tls/server.crt:/etc/clickhouse-server/certs/server.crt:ro
       - ./spec/support/tls/server.key:/etc/clickhouse-server/certs/server.key:ro
+      - ./spec/support/cluster/keeper.xml:/etc/clickhouse-server/config.d/keeper.xml:ro # ON CLUSTER DDL needs coordination
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:

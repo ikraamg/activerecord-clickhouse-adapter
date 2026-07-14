@@ -46,6 +46,8 @@ Metrics/ClassLength:
     - lib/active_record/connection_adapters/clickhouse/row_binary.rb
     # Carries its RawResult and ChunkedBody value objects as nested classes.
     - lib/active_record/connection_adapters/clickhouse/http_connection.rb
+    # One flat dump hook per schema object kind (columns, MVs, projections).
+    - lib/active_record/connection_adapters/clickhouse/schema_dumper.rb
 
 Metrics/AbcSize:
   Exclude:

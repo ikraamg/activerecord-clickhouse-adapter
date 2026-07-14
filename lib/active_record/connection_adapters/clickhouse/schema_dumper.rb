@@ -16,6 +16,37 @@ module ActiveRecord
           materialized_views(stream)
         end
 
+        # Projections dump right after their table as add_projection calls, parsed back
+        # out of the stored query text (SELECT ... [GROUP BY ...] [ORDER BY ...]).
+        def table(table, stream)
+          super
+          projections(table).each do |row|
+            stream.puts("  #{projection_statement(table, row)}")
+            stream.puts
+          end
+        end
+
+        PROJECTIONS_SQL = <<~SQL.squish
+          SELECT name, query FROM system.projections
+          WHERE database = currentDatabase() AND table = %s ORDER BY name
+        SQL
+        private_constant :PROJECTIONS_SQL
+
+        def projections(table)
+          @connection.select_all(format(PROJECTIONS_SQL, @connection.quote(table)), "SCHEMA").to_a
+        end
+
+        def projection_statement(table, row)
+          query = row["query"]
+          parts = {
+            select: query[/\ASELECT\s+(.*?)(?:\s+GROUP BY\s|\s+ORDER BY\s|\z)/m, 1],
+            group: query[/\sGROUP BY\s+(.*?)(?:\s+ORDER BY\s|\z)/m, 1],
+            order: query[/\sORDER BY\s+(.*)\z/m, 1]
+          }.compact
+          arguments = parts.map { |keyword, expression| "#{keyword}: #{expression.inspect}" }
+          "add_projection #{table.inspect}, #{row["name"].inspect}, #{arguments.join(", ")}"
+        end
+
         MATERIALIZED_VIEW_SQL = <<~SQL.squish
           SELECT name, as_select, create_table_query FROM system.tables
           WHERE database = currentDatabase() AND engine = 'MaterializedView'
