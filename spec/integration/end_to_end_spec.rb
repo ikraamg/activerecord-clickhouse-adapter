@@ -145,6 +145,18 @@ RSpec.describe "End-to-end telemetry spine" do
     expect(positions).to eq([1, 2, 1])
   end
 
+  it "resolves device names through a dictionary instead of a JOIN" do
+    conn = ActiveRecord::Base.lease_connection
+    conn.execute("CREATE TABLE spine_devices (id UInt64, name String) ENGINE = MergeTree ORDER BY id")
+    conn.execute("INSERT INTO spine_devices VALUES (1, 'lobby'), (2, 'office')")
+    conn.create_dictionary("spine_device_names", source: "spine_devices", primary_key: :id)
+    names = model.dict_get("spine_device_names", :name, key: :device_id).order(:ts).map { |row| row[:name] }
+    expect(names).to eq(%w[lobby lobby office])
+  ensure
+    conn.execute("DROP DICTIONARY IF EXISTS spine_device_names")
+    conn.drop_table("spine_devices", if_exists: true)
+  end
+
   describe "the pre-aggregation pipeline (MV -> AggregatingMergeTree -> merged reads)" do
     subject(:daily_model) do
       Class.new(ActiveRecord::Base) do

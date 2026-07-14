@@ -204,6 +204,36 @@ module ActiveRecord
         end
       end
 
+      # Projects a dictionary lookup alongside the row — dictGet replaces the
+      # dimension JOIN of a star schema. Dictionary/attribute names travel as quoted
+      # string literals; only the alias needs identifier validation.
+      module RelationDictionaries
+        def dict_get(dictionary, attribute, key:, as: nil, default: nil)
+          spawn.dict_get!(dictionary, attribute, key: key, as: as, default: default)
+        end
+
+        def dict_get!(dictionary, attribute, key:, as: nil, default: nil)
+          alias_name = (as || attribute).to_s
+          raise ArgumentError, "dict_get alias must be an identifier" unless
+            RelationWindowing::WINDOW_IDENTIFIER.match?(alias_name)
+
+          self.select_values += [klass.arel_table[::Arel.star]] if select_values.empty?
+          self.select_values += [::Arel::Nodes::As.new(dict_get_node(dictionary, attribute, key, default),
+                                                       ::Arel.sql(alias_name))]
+          self
+        end
+
+        private
+
+        def dict_get_node(dictionary, attribute, key, default)
+          arguments = [::Arel::Nodes.build_quoted(dictionary.to_s), ::Arel::Nodes.build_quoted(attribute.to_s),
+                       klass.arel_table[key]]
+          return ::Arel::Nodes::NamedFunction.new("dictGet", arguments) if default.nil?
+
+          ::Arel::Nodes::NamedFunction.new("dictGetOrDefault", arguments + [::Arel::Nodes.build_quoted(default)])
+        end
+      end
+
       # Compiles the dialect state RelationMethods accumulated into the Arel AST right
       # before SQL generation; only RelationMethods#build_arel calls in here.
       module RelationDialectCompilation
@@ -365,15 +395,15 @@ module ActiveRecord
 
         included do
           default_scope do
-            extending(RelationMethods, RelationWindowing, RelationDialectCompilation,
-                      RelationWrites, RelationCalculations)
+            extending(RelationMethods, RelationWindowing, RelationDictionaries,
+                      RelationDialectCompilation, RelationWrites, RelationCalculations)
           end
         end
 
         class_methods do
           delegate :final, :sample, :prewhere, :settings, :limit_by, :array_join,
-                   :group_by_period, :fill, :rollup, :window, :uniq_count, :quantile,
-                   :top_k, :arg_max, :arg_min, :estimated_count, to: :all
+                   :group_by_period, :fill, :rollup, :window, :dict_get, :uniq_count,
+                   :quantile, :top_k, :arg_max, :arg_min, :estimated_count, to: :all
 
           # insert_all's streaming sibling: the batch goes over the wire as one
           # chunked INSERT instead of being rendered into a SQL string first.

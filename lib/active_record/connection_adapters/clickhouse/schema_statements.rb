@@ -25,7 +25,16 @@ module ActiveRecord
 
         def rename_table(table_name, new_name, **)
           clear_generatable_primary_key_cache
-          execute("RENAME TABLE #{quote_table_name(table_name)} TO #{quote_table_name(new_name)}")
+          execute("RENAME TABLE #{quote_table_name(table_name)} TO #{quote_table_name(new_name)}#{on_cluster_clause}")
+        end
+
+        def remove_column(table_name, column_name, type = nil, **options)
+          return if options[:if_exists] == true && !column_exists?(table_name, column_name)
+
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            #{remove_column_for_alter(table_name, column_name, type, **options)}
+          SQL
         end
 
         # The insert-trigger half of the OLAP ingest-raw/read-aggregated idiom. A TO
@@ -72,6 +81,34 @@ module ActiveRecord
           SQL
         end
 
+        # Dictionaries replace star-schema dimension JOINs with in-memory lookups.
+        # Columns are inferred from the source table, and the SOURCE clause carries the
+        # adapter's credentials — the dictionary's own loader authenticates separately
+        # and would otherwise connect as `default` (probed 2026-07-14).
+        def create_dictionary(name, source:, primary_key:, layout: :flat, lifetime: 300)
+          execute(<<~SQL.squish)
+            CREATE DICTIONARY #{quote_table_name(name)} (#{dictionary_columns(source)})
+            PRIMARY KEY #{quote_column_name(primary_key)}
+            SOURCE(CLICKHOUSE(#{dictionary_source(source)}))
+            LAYOUT(#{dictionary_layout(layout)})
+            LIFETIME(#{dictionary_lifetime(lifetime)})
+          SQL
+        end
+
+        def drop_dictionary(name, if_exists: false)
+          execute("DROP DICTIONARY #{"IF EXISTS " if if_exists}#{quote_table_name(name)}")
+        end
+
+        def dictionaries
+          select_values(<<~SQL.squish, "SCHEMA")
+            SELECT name FROM system.dictionaries WHERE database = currentDatabase() ORDER BY name
+          SQL
+        end
+
+        def reload_dictionary(name)
+          execute("SYSTEM RELOAD DICTIONARY #{quote_table_name(name)}")
+        end
+
         # Partition lifecycle: the OLAP replacement for bulk deletes and archival. All
         # verbs take the partition_id string (see #partitions) — the ID form is a plain
         # quoted literal, so arbitrary expressions never reach the ALTER.
@@ -114,7 +151,7 @@ module ActiveRecord
           rendered = default.respond_to?(:call) ? default.call : quote(default)
           alteration = default.nil? ? "REMOVE DEFAULT" : "DEFAULT #{rendered}"
           execute(<<~SQL.squish)
-            ALTER TABLE #{quote_table_name(table_name)}
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
             MODIFY COLUMN #{quote_column_name(column_name)} #{alteration}
           SQL
         end
@@ -206,6 +243,32 @@ module ActiveRecord
         end
 
         private
+
+        def drop_table_sql(...)
+          "#{super}#{on_cluster_clause}"
+        end
+
+        def dictionary_columns(source)
+          columns(source).map { |column| "#{quote_column_name(column.name)} #{column.sql_type}" }.join(", ")
+        end
+
+        def dictionary_source(source)
+          clauses = ["TABLE #{quote(source.to_s)}", "DB #{quote(@config[:database].to_s)}"]
+          clauses << "USER #{quote(@config[:username].to_s)}" if @config[:username]
+          clauses << "PASSWORD #{quote(@config[:password].to_s)}" if @config[:password]
+          clauses.join(" ")
+        end
+
+        def dictionary_layout(layout)
+          raise ArgumentError, "unknown dictionary layout #{layout.inspect}" unless /\A[a-z_]+\z/.match?(layout.to_s)
+
+          "#{layout.to_s.upcase}()"
+        end
+
+        def dictionary_lifetime(lifetime)
+          range = lifetime.is_a?(Range) ? lifetime : (0..lifetime)
+          "MIN #{Integer(range.begin)} MAX #{Integer(range.end)}"
+        end
 
         def alter_partition(table_name, verb, partition_id, suffix: nil)
           execute(<<~SQL.squish)
