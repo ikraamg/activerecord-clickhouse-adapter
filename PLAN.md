@@ -123,6 +123,10 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | RowBinary serializes LowCardinality columns as their plain inner type — the dictionary encoding is block-format-only | Iteration 16 probe |
 | `output_format_binary_write_json_as_string=1` delivers JSON columns as their text form on binary wires; without it they use a binary layout with no stability guarantee | Iteration 16 probe |
 | The HTTP interface accepts chunked `Transfer-Encoding` INSERT bodies with the statement in the `query` param: 100k `JSONCompactEachRow` rows streamed in one request, `written_rows` in the summary header | Iteration 16 probe |
+| A dictionary's CLICKHOUSE source authenticates separately from the session that created it — it connects as `default` and fails dictGet with AUTHENTICATION_FAILED (code 516) unless SOURCE carries USER/PASSWORD | Iteration 20 probe |
+| ON CLUSTER DDL needs a coordination layer even on the stock single-replica `default` cluster (NO_ELEMENTS_IN_CONFIG, code 139); an embedded Keeper (`keeper_server` + `zookeeper` pointing at itself) suffices | Iteration 20 probe |
+| ReplacingMergeTree refuses ADD PROJECTION while `deduplicate_merge_projection_mode = 'throw'` (the default): SUPPORT_IS_DISABLED, code 344 — plain MergeTree takes projections unconditionally | Iteration 20 probe |
+| `system.projections` stores each projection's definition as query text (`SELECT ... [GROUP BY ...] [ORDER BY ...]`) plus name/type/sorting_key — enough to round-trip `add_projection` through schema.rb | Iteration 20 probe |
 
 Local corpora:
 
@@ -458,6 +462,28 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     strings (columns go through `arel_table`, so they quote themselves). ClickHouse 25.8
     supports `lag`/`lead` directly — no `lagInFrame` fallback needed (probed live).
 
+44. **create_dictionary infers columns and injects credentials** *(Iteration 20)*: the
+    dictionary DDL reads the source table's columns (`name sql_type` verbatim) instead
+    of asking for a second schema block, and always writes USER/PASSWORD into
+    SOURCE(CLICKHOUSE(…)) because the dictionary loader authenticates separately —
+    without them every dictGet dies with AUTHENTICATION_FAILED (grounding fact). Layout
+    and lifetime stay thin (`layout: :hashed`, `lifetime: 0..300`); `.dict_get` projects
+    dictGet/dictGetOrDefault through `select_values` with names as quoted literals, so
+    only the alias needs identifier validation.
+
+45. **`cluster:` config stamps DDL, nothing else** *(Iteration 20)*: one adapter-level
+    `on_cluster_clause` renders `ON CLUSTER` into CREATE/ALTER TABLE (SchemaCreation
+    visitors), DROP (drop_table_sql), RENAME, remove_column and MODIFY COLUMN — DML and
+    queries never see it. Chosen over the incumbent's per-migration `cluster` DSL noise:
+    the cluster is deployment topology, so it belongs in database.yml, and single-node
+    development ignores it entirely.
+
+46. **Projections dump as `add_projection` lines parsed from `system.projections`**
+    *(Iteration 20)*: the stored query text (`SELECT … [GROUP BY …] [ORDER BY …]`) is
+    split by regex back into the same `select:/group:/order:` kwargs `add_projection`
+    takes, appended right after each table's `create_table` block — the dump loads and
+    re-dumps byte-identically without a structure.sql detour.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -714,6 +740,19 @@ landed TDD as `RelationWindowing` (ledger #43): `.window(:fn, *cols, as:,
 partition_by:, order_by:, frame:)` on the `Querying` concern, 10 live examples
 covering row_number, running sums, lag, explicit frames and injection guards.
 Harness: **2,003 runs, 0 failures, 154 skips**. Suite: 441 examples green.
+
+**Phase 6 (cont.) — through corpora + the last OLAP deferrals.** *(landed — Iteration 20)*
+Vendored `has_many_through_associations_test` + `has_one_through_associations_test`
+byte-exact (+14 models, +11 fixture sets, +16 slice tables incl. composite-keyed
+`cpk_order_tags`) and upstream's `validations_repair_helper` into the harness shim.
+Every through-suite failure fell into an established family — no adapter gaps.
+Dictionaries landed TDD (ledger #44): `create_dictionary`/`drop_dictionary`/
+`reload_dictionary`/`dictionaries` plus `.dict_get` relation sugar, 12 live examples.
+ON CLUSTER DDL landed via `cluster:` config (ledger #45) with an embedded Keeper in
+the compose file so distributed DDL is provable on one node, 9 live examples.
+Projections now dump into schema.rb as `add_projection` lines parsed from
+`system.projections` (ledger #46), round-tripping byte-identically. Harness:
+**2,226 runs, 0 failures, 177 skips**. Suite: 465 examples green.
 
 ## 7. Spec strategy (three tiers)
 

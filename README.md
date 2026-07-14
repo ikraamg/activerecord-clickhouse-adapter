@@ -106,7 +106,24 @@ attach_partition :events, "20260701"
 drop_partition :events, "20260701"
 ```
 
-Both `schema.rb` and `structure.sql` round-trip engines, sorting keys, partitions, TTLs, codecs, and settings.
+Dictionaries replace star-schema dimension JOINs with in-memory lookups. Columns are inferred from the source table, and the adapter's credentials are injected into the SOURCE clause:
+
+```ruby
+create_dictionary :device_names, source: "devices", primary_key: :id
+create_dictionary :device_names, source: "devices", primary_key: :id, layout: :hashed, lifetime: 60..300
+reload_dictionary :device_names
+drop_dictionary :device_names, if_exists: true
+```
+
+Set `cluster:` in `database.yml` to stamp schema DDL with `ON CLUSTER`, sending it through the distributed DDL queue:
+
+```yaml
+production:
+  adapter: clickhouse
+  cluster: my_cluster
+```
+
+Both `schema.rb` and `structure.sql` round-trip engines, sorting keys, partitions, TTLs, codecs, settings, and projections (dumped as `add_projection` statements).
 
 ## Querying
 
@@ -144,6 +161,14 @@ Event.window(:row_number, as: :position, partition_by: :device_id, order_by: :ts
 Event.window(:sum, :duration_ms, as: :running_total, order_by: :ts)
 Event.window(:lag, :battery, as: :previous, partition_by: :device_id, order_by: :ts,
              frame: "ROWS BETWEEN 1 PRECEDING AND CURRENT ROW")
+```
+
+Dictionary lookups project alongside the row:
+
+```ruby
+Event.dict_get(:device_names, :name, key: :device_id)                     # ... AS name
+Event.dict_get(:device_names, :name, key: :device_id, as: :device_name)
+Event.dict_get(:device_names, :name, key: :device_id, default: "unknown") # dictGetOrDefault
 ```
 
 Approximate and positional aggregates:
