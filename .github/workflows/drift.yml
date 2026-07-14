@@ -1,0 +1,37 @@
+name: Drift detector
+
+# Early warning for upstream drift, decoupled from the merge-gating CI matrix:
+# Rails main and the ClickHouse nightly image each get a weekly run (plus manual
+# dispatch). A red run here means upstream changed something — probe it live,
+# record the grounding fact, and land the fix before it reaches a release.
+on:
+  schedule:
+    - cron: "0 5 * * 1" # Mondays 05:00 UTC
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    name: "${{ matrix.name }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Rails main / ClickHouse 25.8", rails: edge, clickhouse: "25.8" }
+          - { name: "Rails release / ClickHouse head", rails: release, clickhouse: head }
+    env:
+      CLICKHOUSE_VERSION: ${{ matrix.clickhouse }}
+      RAILS_SOURCE: ${{ matrix.rails == 'edge' && 'edge' || '' }}
+      BUNDLE_FROZEN: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --wait
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+          cache-version: drift-${{ matrix.rails }}
+      - run: bundle exec rspec
+      - name: Server log tail on failure
+        if: failure()
+        run: docker compose logs --tail 50 clickhouse
