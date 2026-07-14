@@ -514,21 +514,6 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     structure.sql still carries them. The dumper also finally honors
     `ignore_tables` for materialized views and dictionaries.
 
-50. **`perform_query` speaks both Rails contracts** *(Iteration 22)*: Rails main
-    (8.2) replaced the seven-argument `perform_query` with a two-argument form
-    taking a `QueryIntent`; the adapter defines whichever signature matches the
-    loaded Rails (detected by `QueryIntent`'s existence at load time) and both
-    delegate to one `execute_wire_query` body. Edge-only drift in the vendored
-    8.1.3 corpus text (not adapter behavior) lives in `skips_edge.yml`, merged
-    into the manifest only when running against >= 8.2.0.alpha.
-
-51. **CI truths the local environment can't see** *(Iteration 22)*: RuboCop's
-    `AllCops: Exclude` replaces the default exclusions unless `inherit_mode`
-    merges them — in CI, where bundler installs into `vendor/bundle` inside the
-    workspace, that meant scanning installed gems' own rubocop configs. And
-    `Hash#inspect` renders `{key => value}` before Ruby 3.4, so the schema
-    dumper formats the `settings:` option itself instead of trusting `inspect`.
-
 50. **`perform_query` speaks both adapter contracts** *(Iteration 22)*: Rails main
     (8.2.0.alpha) replaced the positional
     `perform_query(conn, sql, binds, casted, prepare:, notification_payload:, batch:)`
@@ -540,6 +525,33 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     `select_all`, which both versions provide. Upstream drift in the *vendored 8.1.3
     test text* (not adapter behavior) lives in `skips_edge.yml`, merged into the
     manifest only when `ActiveRecord.gem_version >= 8.2.0.alpha`.
+
+51. **CI truths the local environment can't see** *(Iteration 22)*: RuboCop's
+    `AllCops: Exclude` replaces the default exclusions unless `inherit_mode`
+    merges them — in CI, where bundler installs into `vendor/bundle` inside the
+    workspace, that meant scanning installed gems' own rubocop configs. And
+    `Hash#inspect` renders `{key => value}` before Ruby 3.4, so the schema
+    dumper formats the `settings:` option itself instead of trusting `inspect`.
+
+52. **Rails' index option surface is accepted verbatim; only using:/granularity:
+    matter** *(Iteration 23)*: `add_index` asserts the abstract adapter's
+    `valid_index_options` plus `:granularity` (and the `internal:` flag), so
+    cross-database migrations port without edits — `length:`, `where:`,
+    `order:` etc. are accepted and ignored, the same posture MySQL takes toward
+    Postgres-only options. `unique:` is accepted but unenforceable (no unique
+    indexes in ClickHouse), so `index_exists?(unique: true)` honestly reports
+    false. `remove_index` delegates to Rails' `index_name_for_remove`, which
+    matches by columns rather than derived name — custom-named indexes resolve
+    by their columns, and a name-shaped column string is refused, byte-for-byte
+    upstream semantics.
+
+53. **DSL datetimes default to microsecond precision like Rails, not
+    millisecond like ClickHouse** *(Iteration 23)*: the adapter now claims
+    `supports_datetime_with_precision?`, so `t.datetime` without an explicit
+    `precision:` gets Rails' convention of 6 (`DateTime64(6, 'UTC')`) instead
+    of the previous CH-idiomatic 3. Explicit `precision:` always wins; existing
+    columns are untouched. Chosen for AR parity: timestamp round-trips through
+    Time objects preserve microseconds by default on every other adapter.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -834,6 +846,26 @@ ClickHouse 26.6 drift — MODIFY COLUMN narrowing needs an in-statement DEFAULT
 stored-NULLs guard), async_insert's server default flipped on, LowCardinality
 ROLLUP totals now key nil, Geometry/QBit added and Object removed from the type
 catalog. Suite: 490 examples green on 25.8 and 26.6.
+
+**Phase 6 (cont.) — migration corpus.** *(landed — Iteration 23)* Vendored 15 of
+Rails' `migration/` sub-suites byte-exact (columns, column_attributes,
+column_positioning, index, rename_table, change_schema, create_join_table,
+references_index, references_statements, command_recorder, invalid_options,
+logger, schema_definitions, change_table, + migration/helper). The harness shim
+gained `InlineDDLDefaults` (implicit-id `create_table` calls become an explicit
+Int64 key column + sorting key; the synthesized column carries `primary_key:`
+so Rails raises its dedicated redefine error). Adapter gaps closed TDD along
+the way: Rails-contract `add_index`/`remove_index`/`rename_index` (ledger #52),
+`rename_table`/`rename_column` index renaming, `change_column` default
+replacement semantics, `change_column_null` argument validation, dependent
+skip-index drops in `remove_column`, `datetime(p)`/`timestamp(p)` in
+`type_to_sql`, microsecond default precision (ledger #53), `NotNullViolation`
+via `input_format_null_as_default = 0`, control-character-safe `quote_string`,
+versionless-ReplacingMergeTree `ar_internal_metadata`, and Rails 7.1+
+`build_change_column_definition` seams. 24 manifest skips document the honest
+dialect gaps (no unique indexes, String has no limit, non-Nullable column
+default, raw UPDATE statements, immutable sorting keys). Migration corpus:
+**297 runs, 0 failures, 24 skips**. Suite: 516 examples green.
 
 ## 7. Spec strategy (three tiers)
 
