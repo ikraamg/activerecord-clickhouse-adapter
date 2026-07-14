@@ -15,12 +15,20 @@ require "active_support/core_ext/kernel/singleton_class"
 require "yaml"
 
 module ARCompat
+  # skips.yml is the ratchet for the pinned corpus (vendor/UPSTREAM) on released
+  # Rails and the ClickHouse floor. Overlays quarantine drift when that same corpus
+  # runs against other versions; each loads only while its predicate holds and gets
+  # deleted when the corpus is re-pinned past it.
+  SKIP_OVERLAYS = {
+    "skips_edge.yml" => -> { ActiveRecord.gem_version >= Gem::Version.new("8.2.0.alpha") }
+  }.freeze
+
   SKIPS = YAML.load_file(File.expand_path("../../skips.yml", __dir__), aliases: true) || {}
 
-  # The corpus is pinned to 8.1.3; running it against Rails main needs a few extra
-  # skips for upstream drift in the vendored test text itself.
-  if ActiveRecord.gem_version >= Gem::Version.new("8.2.0.alpha")
-    YAML.load_file(File.expand_path("../../skips_edge.yml", __dir__)).each do |suite, tests|
+  SKIP_OVERLAYS.each do |overlay, applies|
+    next unless applies.call
+
+    YAML.load_file(File.expand_path("../../#{overlay}", __dir__)).each do |suite, tests|
       (SKIPS[suite] ||= {}).merge!(tests)
     end
   end
