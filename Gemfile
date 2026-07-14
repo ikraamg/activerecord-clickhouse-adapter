@@ -7,17 +7,21 @@ gemspec
 # RAILS_SOURCE=edge runs the suite against Rails main: the local rails-main worktree
 # when present (kept fresh via `git -C ../rails-main fetch origin main`), the GitHub
 # monorepo otherwise (CI). Default is the released gem.
+# rubocop:disable Bundler/DuplicatedGem -- edge branches are mutually exclusive
 if ENV["RAILS_SOURCE"] == "edge"
   if Dir.exist?(File.expand_path("../rails-main/activerecord", __dir__))
+    gem "activemodel", path: "../rails-main/activemodel"
     gem "activerecord", path: "../rails-main/activerecord"
+    gem "activesupport", path: "../rails-main/activesupport"
   else
     git "https://github.com/rails/rails.git", branch: "main" do
       gem "activemodel"
-      gem "activerecord" # rubocop:disable Bundler/DuplicatedGem -- edge branches are mutually exclusive
+      gem "activerecord"
       gem "activesupport"
     end
   end
 end
+# rubocop:enable Bundler/DuplicatedGem
 
 group :development, :test do
   # models/user in the vendored association suites declares has_secure_password.

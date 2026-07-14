@@ -53,7 +53,7 @@ module ActiveRecord
 
         def explain(arel, binds = [], options = []) # :nodoc:
           sql = "#{build_explain_clause(options)} #{to_sql(arel, binds)}"
-          result = internal_exec_query(sql, "EXPLAIN", binds)
+          result = select_all(sql, "EXPLAIN", binds)
           ([result.columns.join("\t")] + result.rows.map { |row| row.join("\t") }).join("\n")
         end
 
@@ -303,7 +303,21 @@ module ActiveRecord
           "#{comments.strip} #{sql[0...-comments.length]}"
         end
 
-        def perform_query(raw_connection, sql, binds, type_casted_binds, prepare:, notification_payload:, batch:) # rubocop:disable Lint/UnusedMethodArgument
+        # Rails main (8.2) funnels execution through a QueryIntent object; released
+        # 8.1 passes the pieces positionally. One wire body serves both contracts.
+        if ActiveRecord::ConnectionAdapters.const_defined?(:QueryIntent)
+          def perform_query(raw_connection, intent)
+            execute_wire_query(raw_connection, intent.processed_sql, intent.binds, intent.type_casted_binds,
+                               notification_payload: intent.notification_payload)
+          end
+        else
+          def perform_query(raw_connection, sql, binds, type_casted_binds, prepare:, notification_payload:, batch:) # rubocop:disable Lint/UnusedMethodArgument
+            execute_wire_query(raw_connection, sql, binds, type_casted_binds,
+                               notification_payload: notification_payload)
+          end
+        end
+
+        def execute_wire_query(raw_connection, sql, binds, type_casted_binds, notification_payload:)
           sql, params = materialize_query_params(hoist_trailing_comments(sql), binds, type_casted_binds)
           result = raw_connection.execute(sql, params: params)
           verified!

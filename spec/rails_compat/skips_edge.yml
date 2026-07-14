@@ -1,0 +1,10 @@
+# Extra skips applied only when RAILS_SOURCE=edge runs the vendored 8.1.3 suites
+# against Rails main: upstream drift in the pinned test text, not adapter behavior.
+# Each entry names the upstream change; delete it when the vendored corpus is re-pinned.
+HasManyAssociationsTest:
+  test_invalid_key_raises_with_message_including_all_default_options: >-
+    Rails main added :default_order to the valid has_many keys, changing the
+    asserted error message (pinned 8.1.3 text)
+ActiveRecord::ConnectionAdapters::QuotingTest:
+  test_quote_as_mb_chars_no_column: >-
+    Rails main removed ActiveSupport::Multibyte::Chars, which the pinned test constructs

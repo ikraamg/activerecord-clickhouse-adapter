@@ -17,6 +17,14 @@ require "yaml"
 module ARCompat
   SKIPS = YAML.load_file(File.expand_path("../../skips.yml", __dir__), aliases: true) || {}
 
+  # The corpus is pinned to 8.1.3; running it against Rails main needs a few extra
+  # skips for upstream drift in the vendored test text itself.
+  if ActiveRecord.gem_version >= Gem::Version.new("8.2.0.alpha")
+    YAML.load_file(File.expand_path("../../skips_edge.yml", __dir__)).each do |suite, tests|
+      (SKIPS[suite] ||= {}).merge!(tests)
+    end
+  end
+
   CONNECTION_CONFIG = {
     adapter: "clickhouse",
     host: ENV.fetch("CLICKHOUSE_HOST", "localhost"),
