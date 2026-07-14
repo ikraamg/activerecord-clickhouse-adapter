@@ -78,13 +78,18 @@ module ActiveRecord
         # the new definition fully replaces the old: an omitted default clears an
         # existing one (the server keeps it through a bare type change, probed 2026-07-14).
         def change_column(table_name, column_name, type, **options)
-          sql_type = type_to_sql(type, **options.slice(:limit, :precision, :scale))
-          sql_type = "Nullable(#{sql_type})" if options[:null]
-          sql_type = "LowCardinality(#{sql_type})" if options[:low_cardinality]
-          definition = "MODIFY COLUMN #{quote_column_name(column_name)} #{sql_type}"
+          sql_type = changed_column_sql_type(type, options)
           new_default = options.key?(:default) && !options[:default].nil?
-          definition += " DEFAULT #{quote(options[:default])}" if new_default
-          execute("ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause} #{definition}")
+          default_clause =
+            if new_default
+              " DEFAULT #{quote(options[:default])}"
+            elsif !options[:null]
+              narrowing_placeholder_default(table_name, column_name, sql_type)
+            end
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            MODIFY COLUMN #{quote_column_name(column_name)} #{sql_type}#{default_clause}
+          SQL
           change_column_default(table_name, column_name, nil) unless new_default
         end
 
@@ -408,6 +413,25 @@ module ActiveRecord
 
           references = [first_table, second_table].map { |table| "#{table.to_s.singularize}_id" }.sort
           "(#{references.join(", ")})"
+        end
+
+        def changed_column_sql_type(type, options)
+          sql_type = type_to_sql(type, **options.slice(:limit, :precision, :scale))
+          sql_type = "Nullable(#{sql_type})" if options[:null]
+          sql_type = "LowCardinality(#{sql_type})" if options[:low_cardinality]
+          sql_type
+        end
+
+        # 26.6+ refuses Nullable(T) -> T without an in-statement DEFAULT (§2), so the
+        # type's own default rides along when change_column narrows; the trailing
+        # change_column_default(nil) removes it again. The stored-NULLs guard keeps
+        # that DEFAULT from silently rewriting data during the conversion.
+        def narrowing_placeholder_default(table_name, column_name, sql_type)
+          column = column_for(table_name, column_name)
+          return "" unless column&.null
+
+          assert_no_stored_nulls(table_name, column_name)
+          " DEFAULT defaultValueOfTypeName(#{quote(sql_type)})"
         end
 
         # REMOVE DEFAULT errors when none exists (code 36, probed 2026-07-14);

@@ -310,6 +310,25 @@ RSpec.describe "ClickHouse schema statements" do
         connection.change_column("alter_probe", :label, :string)
         expect(column(:label).default).to be_nil
       end
+
+      it "narrows a Nullable column back to non-nullable" do
+        connection.change_column("alter_probe", :label, :string, null: true)
+        connection.change_column("alter_probe", :label, :string, null: false)
+        expect(column(:label).null).to be(false)
+      end
+
+      it "leaves no placeholder default behind after narrowing" do
+        connection.change_column("alter_probe", :label, :string, null: true)
+        connection.change_column("alter_probe", :label, :string, null: false)
+        expect(column(:label).default).to be_nil
+      end
+
+      it "refuses to narrow over stored NULLs" do
+        connection.change_column("alter_probe", :label, :string, null: true)
+        connection.execute("INSERT INTO alter_probe (id, label) VALUES (1, NULL)")
+        expect { connection.change_column("alter_probe", :label, :string, null: false) }
+          .to raise_error(ActiveRecord::ActiveRecordError, /stored NULLs/)
+      end
     end
 
     describe "#change_column_null" do
