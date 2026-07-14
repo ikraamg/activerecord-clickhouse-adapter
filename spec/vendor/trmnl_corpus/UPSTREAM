@@ -1,0 +1,11 @@
+Byte-exact snapshot of TRMNL core's db/migrate_clickhouse/ — the Phase 3
+acceptance corpus (AGENTS.md). Never edit these files here.
+
+Source: ../core @ c176f355c (Remove PostgreSQL log storage (#3633))
+Copied: 2026-07-14, 16 migrations (20260706000001..20260711000002)
+
+Re-snapshot when core adds ClickHouse migrations:
+  cp ../core/db/migrate_clickhouse/*.rb spec/vendor/trmnl_corpus/
+and update this file. A local ../core checkout, when present, takes
+precedence over this snapshot in trmnl_corpus_spec.rb, so drift shows up
+locally before the snapshot goes stale.
