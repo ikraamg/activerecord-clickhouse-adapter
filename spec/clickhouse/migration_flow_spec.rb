@@ -43,6 +43,13 @@ RSpec.describe "ClickHouse migration flow" do
     expect(value).to eq(ActiveRecord::Base.connection_pool.db_config.env_name)
   end
 
+  it "updates an existing internal metadata key in place" do
+    migration_context.migrate
+    metadata = ActiveRecord::Base.connection_pool.internal_metadata
+    metadata[:environment] = "changed"
+    expect(metadata[:environment]).to eq("changed")
+  end
+
   it "is idempotent on re-migrate" do
     migration_context.migrate
     expect { migration_context.migrate }.not_to change(migration_context, :get_all_versions)

@@ -63,6 +63,10 @@ module ActiveRecord
 
       def supports_explain? = true
 
+      # DateTime64(P) is native precision; claiming it makes the DSL apply Rails'
+      # default microsecond precision (6) to datetime columns, like other adapters.
+      def supports_datetime_with_precision? = true
+
       # Data-skipping indexes are INDEX clauses inside CREATE TABLE, not statements.
       def supports_indexes_in_create? = true
 

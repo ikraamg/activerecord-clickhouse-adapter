@@ -23,56 +23,95 @@ module ActiveRecord
           super
         end
 
-        # HABTM join tables have an obvious sorting key: the two reference columns.
+        # HABTM join tables have an obvious sorting key: the two reference columns —
+        # unless they are nullable (sorting keys reject Nullable columns, PLAN.md §2).
         def create_join_table(first_table, second_table, **options)
-          unless options.key?(:order)
-            references = [first_table, second_table].map { |table| "#{table.to_s.singularize}_id" }.sort
-            options[:order] = "(#{references.join(", ")})"
-          end
+          options[:order] ||= join_table_sorting_key(first_table, second_table, options)
           super
         end
 
         def rename_table(table_name, new_name, **)
           clear_generatable_primary_key_cache
+          validate_table_length!(new_name.to_s)
           execute("RENAME TABLE #{quote_table_name(table_name)} TO #{quote_table_name(new_name)}#{on_cluster_clause}")
+          rename_table_indexes(table_name, new_name)
         end
 
         def remove_column(table_name, column_name, type = nil, **options)
           return if options[:if_exists] == true && !column_exists?(table_name, column_name)
 
+          # The DROP mutation refuses to break a skip index (UNKNOWN_IDENTIFIER,
+          # probed 2026-07-14); Rails semantics drop dependent indexes with the column.
+          indexes(table_name).each do |index|
+            remove_index(table_name, name: index.name) if index.columns.include?(column_name.to_s)
+          end
           execute(<<~SQL.squish)
             ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
             #{remove_column_for_alter(table_name, column_name, type, **options)}
           SQL
         end
 
+        # The server rewrites skip-index expressions to the new column name itself
+        # (probed 2026-07-14); Rails' shared helper then renames auto-named indexes.
         def rename_column(table_name, column_name, new_column_name)
           execute(<<~SQL.squish)
             ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
             RENAME COLUMN #{quote_column_name(column_name)} TO #{quote_column_name(new_column_name)}
           SQL
+          rename_column_indexes(table_name, column_name, new_column_name)
+        end
+
+        # No RENAME INDEX in ClickHouse (probed 2026-07-14) — drop and re-add. New
+        # parts index immediately; existing parts after MATERIALIZE INDEX, same
+        # contract as add_index.
+        def rename_index(table_name, old_name, new_name)
+          validate_index_length!(table_name, new_name.to_s)
+          index = indexes(table_name).find { |candidate| candidate.name == old_name.to_s }
+          raise ArgumentError, "no such index #{old_name} in #{table_name}" unless index
+
+          remove_index(table_name, name: old_name)
+          add_index(table_name, index.columns, name: new_name, using: index.using, granularity: index.granularity)
         end
 
         # MODIFY COLUMN takes the full new definition; existing rows are cast in a
-        # mutation, so incompatible narrowing surfaces as a server error.
+        # mutation, so incompatible narrowing surfaces as a server error. Like Rails,
+        # the new definition fully replaces the old: an omitted default clears an
+        # existing one (the server keeps it through a bare type change, probed 2026-07-14).
         def change_column(table_name, column_name, type, **options)
           sql_type = type_to_sql(type, **options.slice(:limit, :precision, :scale))
           sql_type = "Nullable(#{sql_type})" if options[:null]
           sql_type = "LowCardinality(#{sql_type})" if options[:low_cardinality]
           definition = "MODIFY COLUMN #{quote_column_name(column_name)} #{sql_type}"
-          definition += " DEFAULT #{quote(options[:default])}" if options.key?(:default) && !options[:default].nil?
+          new_default = options.key?(:default) && !options[:default].nil?
+          definition += " DEFAULT #{quote(options[:default])}" if new_default
           execute("ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause} #{definition}")
+          change_column_default(table_name, column_name, nil) unless new_default
+        end
+
+        # Dry-run seams (Rails 7.1+): describe the change without executing it.
+        def build_change_column_definition(table_name, column_name, type, **)
+          definition = create_table_definition(table_name)
+          ChangeColumnDefinition.new(definition.new_column_definition(column_name, type, **), column_name)
+        end
+
+        def build_change_column_default_definition(table_name, column_name, default_or_changes)
+          column = column_for(table_name, column_name)
+          return unless column
+
+          ChangeColumnDefaultDefinition.new(column, extract_new_default_value(default_or_changes))
         end
 
         # Narrowing to non-Nullable would silently rewrite stored NULLs to the type
         # default (26.6+) or fail mid-mutation (25.8, code 349), so the Rails backfill
         # default runs first as a synchronous mutation and is required when NULLs exist.
         def change_column_null(table_name, column_name, null, default = nil)
+          validate_change_column_null_argument!(null)
+
           column = columns(table_name).find { |candidate| candidate.name == column_name.to_s }
           raise ArgumentError, "no such column #{column_name} in #{table_name}" unless column
 
           inner_type = column.sql_type.sub(/\ANullable\((.*)\)\z/m, '\1')
-          return change_column(table_name, column_name, "Nullable(#{inner_type})") if null
+          return widen_column_to_nullable(table_name, column_name, inner_type) if null
 
           if default.nil?
             assert_no_stored_nulls(table_name, column_name)
@@ -190,11 +229,13 @@ module ActiveRecord
         end
 
         # MODIFY COLUMN accepts DEFAULT without restating the type; REMOVE DEFAULT
-        # drops it (probed 2026-07-13).
+        # drops it (probed 2026-07-13) but errors when none exists (code 36, probed
+        # 2026-07-14) — Rails treats clearing an absent default as a no-op.
         def change_column_default(table_name, column_name, default_or_changes)
           default = extract_new_default_value(default_or_changes)
-          rendered = default.respond_to?(:call) ? default.call : quote(default)
-          alteration = default.nil? ? "REMOVE DEFAULT" : "DEFAULT #{rendered}"
+          alteration = default_alteration_clause(table_name, column_name, default)
+          return unless alteration
+
           execute(<<~SQL.squish)
             ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
             MODIFY COLUMN #{quote_column_name(column_name)} #{alteration}
@@ -240,7 +281,9 @@ module ActiveRecord
           select_all(skipping_indices_sql, "SCHEMA").map do |row|
             ClickHouse::IndexDefinition.new(
               table_name.to_s, row["name"],
-              columns: [row["expr"]], using: row["type_full"], granularity: row["granularity"]
+              # The server stores the expression bare ("a, b", probed 2026-07-14);
+              # Rails' index helpers expect a column-name array.
+              columns: row["expr"].split(", "), using: row["type_full"], granularity: row["granularity"]
             )
           end
         end
@@ -266,7 +309,10 @@ module ActiveRecord
           when "string", "text" then "String"
           when "float" then "Float64"
           when "decimal", "numeric" then "Decimal(#{precision || 38}, #{scale || 10})"
-          when "datetime", "timestamp" then "DateTime64(#{precision || 3}, 'UTC')"
+          # Rails' shared tests pass mysql-style parenthesized precision ("datetime(6)");
+          # the naked default matches Rails' microsecond convention, not CH's ms.
+          when /\A(?:datetime|timestamp)(?:\((\d+)\))?\z/
+            "DateTime64(#{Regexp.last_match(1) || precision || 6}, 'UTC')"
           when "date" then "Date32"
           when "boolean" then "Bool"
           when "uuid" then "UUID"
@@ -313,25 +359,78 @@ module ActiveRecord
 
         # Data-skipping indexes on existing tables; new parts index immediately,
         # existing parts only after MATERIALIZE INDEX (not issued here).
-        def add_index(table_name, column_name, **options)
-          expression = Array(column_name).map { |part| quote_column_name(part) }.join(", ")
-          type = options.fetch(:using) { raise ArgumentError, "ClickHouse indexes need using: (e.g. \"bloom_filter\")" }
+        def add_index(table_name, column_name, name: nil, if_not_exists: false, internal: false, **options)
+          # The full abstract option list is accepted so cross-database migrations
+          # port verbatim; only using:/granularity: affect the DDL. unique: is
+          # unenforceable — ClickHouse has no unique indexes, so
+          # index_exists?(unique: true) stays false.
+          options.assert_valid_keys(valid_index_options)
+          index_name = (name || index_name(table_name, column_name)).to_s
+          validate_index_length!(table_name, index_name, internal)
+
+          # bloom_filter serves equality lookups on any scalar type, so vanilla Rails
+          # add_index calls port without edits; specialized types stay a using: away.
           execute(<<~SQL.squish)
             ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
-            ADD INDEX #{quote_column_name(options.fetch(:name, index_name(table_name, column_name)))}
-            #{expression} TYPE #{type} GRANULARITY #{options.fetch(:granularity, 1)}
+            ADD INDEX #{"IF NOT EXISTS " if if_not_exists}#{quote_column_name(index_name)}
+            #{index_expression(column_name)} TYPE #{options.fetch(:using, "bloom_filter")}
+            GRANULARITY #{options.fetch(:granularity, 1)}
           SQL
         end
 
         def remove_index(table_name, column_name = nil, **options)
-          name = options.fetch(:name) { index_name(table_name, column_name) }
+          return if options[:if_exists] && !index_exists?(table_name, column_name, **options)
+
+          # Rails' resolver matches by columns, not derived name, so a custom-named
+          # index is found by its columns and a name-shaped string is refused.
+          name = index_name_for_remove(table_name, column_name, options.except(:if_exists))
+
           execute(<<~SQL.squish)
             ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
-            DROP INDEX #{"IF EXISTS " if options[:if_exists]}#{quote_column_name(name)}
+            DROP INDEX #{quote_column_name(name)}
           SQL
         end
 
         private
+
+        def valid_index_options
+          super + [:granularity]
+        end
+
+        # Multi-column indexes need one tuple expression; a bare list is a syntax error.
+        def index_expression(column_name)
+          quoted = Array(column_name).map { |part| quote_column_name(part) }
+          quoted.length == 1 ? quoted.first : "(#{quoted.join(", ")})"
+        end
+
+        def join_table_sorting_key(first_table, second_table, options)
+          return "tuple()" if options.dig(:column_options, :null)
+
+          references = [first_table, second_table].map { |table| "#{table.to_s.singularize}_id" }.sort
+          "(#{references.join(", ")})"
+        end
+
+        # REMOVE DEFAULT errors when none exists (code 36, probed 2026-07-14);
+        # Rails treats clearing an absent default as a no-op, hence nil.
+        def default_alteration_clause(table_name, column_name, default)
+          if default.nil?
+            column = columns(table_name).find { |candidate| candidate.name == column_name.to_s }
+            return nil if column && column.default.nil? && column.default_function.nil?
+
+            "REMOVE DEFAULT"
+          else
+            "DEFAULT #{default.respond_to?(:call) ? default.call : quote(default)}"
+          end
+        end
+
+        # A bare MODIFY keeps the existing default (probed 2026-07-14) — deliberately
+        # not change_column, whose replace-the-definition semantics would clear it.
+        def widen_column_to_nullable(table_name, column_name, inner_type)
+          execute(<<~SQL.squish)
+            ALTER TABLE #{quote_table_name(table_name)}#{on_cluster_clause}
+            MODIFY COLUMN #{quote_column_name(column_name)} Nullable(#{inner_type})
+          SQL
+        end
 
         # ClickHouse 26.6+ refuses Nullable(T) -> T without a DEFAULT clause in the
         # MODIFY COLUMN itself (BAD_ARGUMENTS, probed 2026-07-14). When the column has
@@ -480,8 +579,11 @@ module ActiveRecord
           case table_name.to_s
           when ActiveRecord::Base.schema_migrations_table_name
             { engine: "ReplacingMergeTree", order: "version" }.merge(options)
+          # No version column: Rails updates metadata entries via ALTER UPDATE, and
+          # mutations cannot touch a ReplacingMergeTree version column (code 420,
+          # probed 2026-07-14). Versionless keeps last-insert-wins for the create path.
           when ActiveRecord::Base.internal_metadata_table_name
-            { engine: "ReplacingMergeTree(updated_at)", order: "key" }.merge(options)
+            { engine: "ReplacingMergeTree", order: "key" }.merge(options)
           else
             options
           end
@@ -558,8 +660,19 @@ module ActiveRecord
           end
         end
 
+        # The server renders control characters as escape sequences in
+        # default_expression ('foo\nbar' arrives as backslash-n, probed 2026-07-14).
+        STRING_LITERAL_ESCAPES = {
+          "0" => "\0", "a" => "\a", "b" => "\b", "f" => "\f",
+          "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v"
+        }.freeze
+        private_constant :STRING_LITERAL_ESCAPES
+
         def unescape_string_literal(contents)
-          contents.gsub(/\\(.)|''/) { Regexp.last_match(1) || "'" }
+          contents.gsub(/\\(.)|''/) do
+            escaped = Regexp.last_match(1)
+            escaped ? STRING_LITERAL_ESCAPES.fetch(escaped, escaped) : "'"
+          end
         end
 
         def fetch_type_metadata(sql_type, cast_type = Types.active_record_cast_type(sql_type))

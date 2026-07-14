@@ -52,9 +52,16 @@ module ActiveRecord
           def column_name_with_order_matcher = COLUMN_NAME_WITH_ORDER_MATCHER
         end
 
+        # Control characters travel as escape sequences, not raw bytes: DDL passes
+        # through String#squish (which would collapse a raw newline inside a quoted
+        # literal) and the server echoes them back escaped anyway.
+        QUOTED_STRING_ESCAPES = {
+          "\\" => "\\\\", "'" => "\\'",
+          "\n" => "\\n", "\r" => "\\r", "\t" => "\\t", "\0" => "\\0"
+        }.freeze
+
         def quote_string(string)
-          # Block form — \' in a gsub replacement string means "post-match", not backslash-quote.
-          string.gsub(/[\\']/) { |char| char == "\\" ? "\\\\" : "\\'" }
+          string.gsub(/[\\'\n\r\t\0]/, QUOTED_STRING_ESCAPES)
         end
 
         # DateTime64 stores an epoch and the server parses naive strings in its own

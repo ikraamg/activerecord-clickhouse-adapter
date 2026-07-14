@@ -86,11 +86,13 @@ module ActiveRecord
 
         # Data-skipping indexes are part of CREATE TABLE (supports_indexes_in_create?);
         # the expression passes through verbatim — it may be a function of columns.
-        def index_in_create(_table_name, column_name, options)
-          expression = Array(column_name).join(", ")
-          type = options.fetch(:using) { raise ArgumentError, "ClickHouse indexes need using: (e.g. \"bloom_filter\")" }
-          "INDEX #{quote_column_name(options.fetch(:name))} #{expression} " \
-            "TYPE #{type} GRANULARITY #{options.fetch(:granularity, 1)}"
+        def index_in_create(table_name, column_name, options)
+          columns = Array(column_name)
+          expression = columns.length == 1 ? columns.first.to_s : "(#{columns.join(", ")})"
+          name = options.fetch(:name) { @conn.index_name(table_name, column_name) }
+          # Same portability default as add_index: bloom_filter unless told otherwise.
+          "INDEX #{quote_column_name(name)} #{expression} " \
+            "TYPE #{options.fetch(:using, "bloom_filter")} GRANULARITY #{options.fetch(:granularity, 1)}"
         end
 
         # DEFAULT / MATERIALIZED / ALIAS are mutually exclusive ways for a column to get

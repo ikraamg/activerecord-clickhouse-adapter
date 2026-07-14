@@ -103,6 +103,24 @@ RSpec.describe "ClickHouse schema statements" do
     expect(connection.primary_keys("schema_probe")).to eq([])
   end
 
+  it "maps parenthesized datetime types like Rails' other adapters" do
+    expect(connection.type_to_sql("datetime(6)")).to eq("DateTime64(6, 'UTC')")
+  end
+
+  it "supports datetime precision" do
+    expect(connection.supports_datetime_with_precision?).to be(true)
+  end
+
+  it "gives DSL datetimes Rails' default microsecond precision" do
+    connection.create_table("precision_probe", force: true, order: "tuple()") do |t|
+      t.datetime :seen_at
+    end
+    seen_at = connection.columns("precision_probe").find { |c| c.name == "seen_at" }
+    expect(seen_at.sql_type).to eq("DateTime64(6, 'UTC')")
+  ensure
+    connection.drop_table("precision_probe", if_exists: true)
+  end
+
   describe "projections" do
     before(:all) do
       conn = ActiveRecord::Base.lease_connection
@@ -199,6 +217,20 @@ RSpec.describe "ClickHouse schema statements" do
     ensure
       connection.change_column_default("default_probe", "status", "old")
     end
+
+    it "no-ops removing a default the column does not have" do
+      connection.change_column_default("default_probe", "status", nil)
+      expect { connection.change_column_default("default_probe", "status", nil) }.not_to raise_error
+    ensure
+      connection.change_column_default("default_probe", "status", "old")
+    end
+
+    it "round-trips a default containing a newline" do
+      connection.change_column_default("default_probe", "status", "foo\nbar")
+      expect(connection.columns("default_probe").find { |c| c.name == "status" }.default).to eq("foo\nbar")
+    ensure
+      connection.change_column_default("default_probe", "status", "old")
+    end
   end
 
   describe "#create_join_table" do
@@ -214,6 +246,11 @@ RSpec.describe "ClickHouse schema statements" do
     it "keeps an explicit order option" do
       connection.create_join_table(:musicians, :songs, order: "song_id")
       expect(connection.table_options("musicians_songs")[:order]).to eq("song_id")
+    end
+
+    it "degrades to an empty sorting key when the reference columns are nullable" do
+      connection.create_join_table(:musicians, :songs, column_options: { null: true })
+      expect(connection.table_options("musicians_songs")[:order]).to be_nil
     end
   end
 
@@ -267,6 +304,12 @@ RSpec.describe "ClickHouse schema statements" do
         connection.change_column("alter_probe", :label, "LowCardinality(String)")
         expect(column(:label).sql_type).to eq("LowCardinality(String)")
       end
+
+      it "drops an existing default when the new definition omits one" do
+        connection.change_column("alter_probe", :label, :string, default: "untitled")
+        connection.change_column("alter_probe", :label, :string)
+        expect(column(:label).default).to be_nil
+      end
     end
 
     describe "#change_column_null" do
@@ -306,6 +349,25 @@ RSpec.describe "ClickHouse schema statements" do
         expect { connection.change_column_null("alter_probe", :label, false) }
           .to raise_error(ActiveRecord::ActiveRecordError, /stored NULLs/)
       end
+
+      it "rejects non-boolean null arguments like Rails" do
+        expect { connection.change_column_null("alter_probe", :label, "false") }
+          .to raise_error(ArgumentError, /boolean/)
+      end
+    end
+
+    describe "#build_change_column_definition" do
+      it "describes the change without executing it" do
+        definition = connection.build_change_column_definition("alter_probe", :label, :integer, limit: 8)
+        expect([definition.column.name.to_s, column(:label).sql_type]).to eq(%w[label String])
+      end
+    end
+
+    describe "#build_change_column_default_definition" do
+      it "describes the default change without executing it" do
+        definition = connection.build_change_column_default_definition("alter_probe", :label, "draft")
+        expect([definition.default, column(:label).default]).to eq(["draft", nil])
+      end
     end
 
     describe "#change_column_comment" do
@@ -338,6 +400,115 @@ RSpec.describe "ClickHouse schema statements" do
         connection.add_index("alter_probe", :label, name: "idx_label", using: "bloom_filter")
         connection.remove_index("alter_probe", name: "idx_label")
         expect(connection.indexes("alter_probe").map(&:name)).not_to include("idx_label")
+      end
+
+      it "defaults the index type to bloom_filter so vanilla Rails migrations port" do
+        connection.add_index("alter_probe", :label, name: "idx_label")
+        index = connection.indexes("alter_probe").find { |candidate| candidate.name == "idx_label" }
+        expect(index.using).to eq("bloom_filter")
+      end
+
+      it "reports multi-column indexes as a column-name array" do
+        connection.add_index("alter_probe", %i[label amount], name: "idx_pair")
+        index = connection.indexes("alter_probe").find { |candidate| candidate.name == "idx_pair" }
+        expect(index.columns).to eq(%w[label amount])
+      end
+
+      it "renames auto-named indexes with the column, like Rails" do
+        connection.add_index("alter_probe", :label)
+        connection.rename_column("alter_probe", :label, :title)
+        expect(connection.indexes("alter_probe").map(&:name)).to eq(["index_alter_probe_on_title"])
+      end
+
+      it "drops dependent skip indexes with the column, like Rails" do
+        connection.add_index("alter_probe", :label, name: "idx_label")
+        connection.remove_column("alter_probe", :label)
+        expect(connection.indexes("alter_probe").map(&:name)).not_to include("idx_label")
+      end
+
+      it "builds indexes declared inside create_table without an explicit type" do
+        connection.create_table("index_in_create_probe", force: true, order: "tuple()") do |t|
+          t.string :sku, index: true
+        end
+        expect(connection.indexes("index_in_create_probe").map(&:using)).to eq(["bloom_filter"])
+      ensure
+        connection.drop_table("index_in_create_probe", if_exists: true)
+      end
+
+      it "rejects unknown add_index options like Rails" do
+        expect { connection.add_index("alter_probe", :label, unqiue: true) }
+          .to raise_error(ArgumentError, /unqiue/i)
+      end
+
+      it "accepts Rails-portable index options it cannot honor, like length:" do
+        connection.add_index("alter_probe", :label, length: 10)
+        expect(connection.indexes("alter_probe").map(&:name)).to include("index_alter_probe_on_label")
+      end
+
+      it "accepts the internal: flag Rails passes for framework-owned indexes" do
+        expect { connection.add_index("alter_probe", :label, internal: true) }.not_to raise_error
+      end
+
+      it "rejects index names beyond the identifier limit" do
+        expect { connection.add_index("alter_probe", :label, name: "x" * 100) }
+          .to raise_error(ArgumentError, /too long/)
+      end
+
+      it "no-ops re-adding an existing index with if_not_exists" do
+        connection.add_index("alter_probe", :label)
+        expect { connection.add_index("alter_probe", :label, if_not_exists: true) }.not_to raise_error
+      end
+
+      it "raises ArgumentError removing an index that does not exist" do
+        expect { connection.remove_index("alter_probe", :label) }
+          .to raise_error(ArgumentError, /No indexes found/)
+      end
+
+      it "no-ops removing a missing index with if_exists" do
+        expect { connection.remove_index("alter_probe", :label, if_exists: true) }.not_to raise_error
+      end
+
+      it "removes an index given its columns through the column: keyword" do
+        connection.add_index("alter_probe", %i[label amount])
+        connection.remove_index("alter_probe", column: %i[label amount])
+        expect(connection.indexes("alter_probe")).to be_empty
+      end
+
+      it "resolves an underscore-joined column string to the matching index, like Rails" do
+        connection.add_index("alter_probe", %i[label amount])
+        connection.remove_index("alter_probe", "label_and_amount")
+        expect(connection.indexes("alter_probe")).to be_empty
+      end
+
+      it "refuses to remove by a column name that only matches an index's name" do
+        connection.add_index("alter_probe", :label, name: "index_alter_probe_on_amount")
+        expect { connection.remove_index("alter_probe", "amount") }
+          .to raise_error(ArgumentError, /No indexes found/)
+      end
+
+      it "renames an index by drop and re-add" do
+        connection.add_index("alter_probe", :label, name: "idx_old", granularity: 3)
+        connection.rename_index("alter_probe", "idx_old", "idx_new")
+        index = connection.indexes("alter_probe").find { |candidate| candidate.name == "idx_new" }
+        expect([index.columns, index.granularity]).to eq([["label"], 3])
+      end
+
+      it "rejects rename_index targets beyond the identifier limit" do
+        connection.add_index("alter_probe", :label, name: "idx_old")
+        expect { connection.rename_index("alter_probe", "idx_old", "x" * 100) }
+          .to raise_error(ArgumentError, /too long/)
+      end
+    end
+
+    describe "#rename_table" do
+      after do
+        connection.drop_table("renamed_probe", if_exists: true)
+      end
+
+      it "renames auto-named indexes with the table, like Rails" do
+        connection.add_index("alter_probe", :label)
+        connection.rename_table("alter_probe", "renamed_probe")
+        expect(connection.indexes("renamed_probe").map(&:name)).to eq(["index_renamed_probe_on_label"])
       end
     end
   end
