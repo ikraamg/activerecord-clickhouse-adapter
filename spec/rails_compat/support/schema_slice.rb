@@ -49,8 +49,8 @@ module ARCompat
       dog_lovers dogs drink_designers edges engines enrollments entrants essays families
       family_trees funny_jokes having humans
       images interests
-      invoices jobs jobs_pool kitchens lessons lessons_students line_items magazines mateys
-      member_details member_types members memberships
+      invoices jobs jobs_pool kitchens lessons lessons_students line_items lions magazines mateys
+      member_details member_types members memberships mentors
       minimalistics minivans nodes non_primary_keys
       numeric_data organizations owners parrots parrots_pirates parrots_treasures people
       peoples_treasures pets pets_treasures pirates price_estimates professors
@@ -643,6 +643,12 @@ module ARCompat
         t.integer :amount, null: true
       end
 
+      connection.create_table :lions, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :gender, null: true
+        t.boolean :is_vegetarian, default: false
+      end
+
       connection.create_table :mateys, force: true, order: "(pirate_id, target_id)" do |t|
         t.integer :pirate_id, limit: 8
         t.integer :target_id, limit: 8
@@ -666,6 +672,11 @@ module ARCompat
       end
 
       connection.create_table :member_types, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
+      connection.create_table :mentors, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
       end
