@@ -1,23 +1,22 @@
-# Iteration 27: autosave corpus or migration_test.rb
+# Iteration 28: migration_test.rb or the core cutover PR
 
-> Status at handoff: Iteration 26 landed the scoping corpus. The three suites
-> (`default_scoping_test`, `named_scoping_test`, `relation_scoping_test` —
-> 233 runs) are vendored byte-exact from v8.1.3 with their missing models
-> (`without_table`, `cat`, `mentor`) and schema-slice tables (`lions`,
-> `mentors`). Six manifest skips, all dialect-honest (see PLAN.md §6). Two new
-> grounding facts: ALTER UPDATE type-checks its expression even at zero
-> matched rows (CANNOT_CONVERT_TYPE on `SET fk = NULL` into non-Nullable), and
-> the circular-join AMBIGUOUS_IDENTIFIER holds on 26.6 and under the legacy
-> analyzer alike. Harness: 2,756 runs / 208 skips, green twice consecutively
-> (seeds 63425 + random). Gem suite 524 green, rubocop zero.
+> Status at handoff: Iteration 27 landed the autosave corpus
+> (`autosave_association_test.rb`, 217 runs in its classes) with ten missing
+> models, their slice tables, and the orders/prisoners tables. New harness
+> translation rule (ledger #54): bare `DELETE FROM t` in upstream test code is
+> pinned to `WHERE 1` by the harness helper — the adapter still passes raw SQL
+> through untouched — which also un-skipped two habtm tests (ratchet shrank).
+> All 36 new skips reuse established seams: rollback dependence, BEGIN/COMMIT
+> query tallies, anonymous-model pk, composite prefetch. Harness: 2,973 runs /
+> 242 skips. Gem suite 524 green, rubocop zero, CI green on the scoping push.
 
 ## Scope
 
 Pick one (value order):
 
-1. **Next corpus:** `autosave_association_test` (associations write-path we
-   haven't exercised) or `migration_test.rb` itself (the big top-level file —
-   the sub-suites are done).
+1. **Next corpus:** `migration_test.rb` itself (the big top-level file — the
+   sub-suites are done), or `nested_attributes_test` as a natural follow-on
+   to autosave.
 2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
 3. **Release housekeeping:** CHANGELOG still says "0.1.0 (unreleased)" though
@@ -31,6 +30,10 @@ Pick one (value order):
   reproduced since. If a full run fails wholesale, re-run the same seed before
   debugging; if it ever reproduces, suspect the teardown TRUNCATE loop racing
   fixture reload.
+- The tmpfs container fills up after several consecutive full-harness runs
+  (NOT_ENOUGH_SPACE, code 243, from fixture-part churn). `docker compose down
+  && docker compose up -d --wait` is the factory reset; do it before blaming
+  the adapter.
 - `t.datetime` now defaults to precision 6. Any consumer schema diff noise of
   `DateTime64(3)` → `DateTime64(6)` is this, not a bug; explicit `precision: 3`
   restores the old shape.
@@ -87,4 +90,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 28.
+read/write path was touched, this file rewritten for Iteration 29.

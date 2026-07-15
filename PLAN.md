@@ -920,6 +920,18 @@ BEGIN we never emit (no transactions), and one association `delete_all`
 nullify whose UPDATE ClickHouse type-checks even at zero matched rows
 (CANNOT_CONVERT_TYPE). Harness now 2,756 runs / 208 skips.
 
+**Phase 6 (cont.) — autosave corpus.** *(landed — Iteration 27)* Vendored
+`autosave_association_test.rb` (the write-path autosave surface: nested
+attributes, marked-for-destruction, circular saves) with ten missing models
+(eye/iris, molecule/electron/liquid, guitar/tuning_peg, mouse/squeak, face,
+translation, cake_designer) and their schema-slice tables plus orders and
+prisoners. A new harness translation rule (ledger #54) pins upstream's bare
+`DELETE FROM t` cleanup statements to `WHERE 1`, un-skipping two habtm tests
+in the process. 36 skips, every one an already-established seam: real-rollback
+dependence (16), BEGIN/COMMIT query tallies (11), anonymous in-test models
+needing a server-reported pk (6), and the composite-key prefetch seam (3).
+Harness: 2,973 runs / 242 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

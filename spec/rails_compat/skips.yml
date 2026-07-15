@@ -341,3 +341,71 @@ RelationScopingTest:
   test_circular_joins_with_scoping_does_not_crash: &circular_self_join >-
     self-join with unaliased base table raises AMBIGUOUS_IDENTIFIER
   test_circular_left_joins_with_scoping_does_not_crash: *circular_self_join
+
+# The autosave suites lean on real transactions: a child failing to save (callback
+# abort, validation, raised exception) must roll the already-written parent or the
+# already-deleted children back. ClickHouse transactions are honest no-ops, so the
+# partial writes persist and the counts/reloads disagree.
+TestAutosaveAssociationsInGeneral:
+  test_autosave_works_even_when_other_callbacks_update_the_parent_model: *anonymous_model_primary_key
+  test_autosave_does_not_pass_through_non_custom_validation_contexts: *anonymous_model_primary_key
+
+TestDefaultAutosaveAssociationOnABelongsToAssociation:
+  test_composite_primary_key_autosave: *composite_prefetch
+
+TestDefaultAutosaveAssociationOnAHasOneAssociation:
+  test_not_resaved_when_unchanged: *query_count_tally
+
+TestDefaultAutosaveAssociationOnAHasManyAssociation:
+  test_build_before_save: *query_count_tally
+  test_build_many_before_save: *query_count_tally
+  test_build_via_block_before_save: *query_count_tally
+  test_build_many_via_block_before_save: *query_count_tally
+  test_circular_autosave_does_not_validate_children: *anonymous_model_primary_key
+  test_has_one_cpk_has_one_autosave_with_id: *composite_prefetch
+  test_parent_should_not_get_saved_with_duplicate_children_records: &uniqueness_rollback >-
+    duplicate child needs a unique index to reject the INSERT and a transaction to
+    roll the parent back; ClickHouse has neither
+
+TestDefaultAutosaveAssociationOnAHasManyAssociationWithAcceptsNestedAttributes:
+  test_indexed_errors_should_be_properly_translated: *anonymous_model_primary_key
+  test_indexed_errors_on_base_attribute_should_be_properly_translated: *anonymous_model_primary_key
+  test_errors_details_with_error_on_base_should_be_indexed_when_passed_as_array: *anonymous_model_primary_key
+
+TestDestroyAsPartOfAutosaveAssociation:
+  test_should_rollback_destructions_if_an_exception_occurred_while_saving_a_parent: &autosave_rollback >-
+    undoing the partial write needs a real transaction rollback; ClickHouse
+    transactions are honest no-ops
+  test_should_rollback_destructions_if_an_exception_occurred_while_saving_a_child: *autosave_rollback
+  test_should_rollback_destructions_if_an_exception_occurred_while_saving_has_many: *autosave_rollback
+  test_should_rollback_destructions_if_an_exception_occurred_while_saving_habtm: *autosave_rollback
+  test_autosave_cpk_association_should_destroy_parent_association_when_marked_for_destruction: *composite_prefetch
+
+TestAutosaveAssociationOnABelongsToAssociation:
+  test_should_rollback_any_changes_if_an_exception_occurred_while_saving: *autosave_rollback
+  test_should_not_load_the_associated_model: *query_count_tally
+
+TestAutosaveAssociationOnAHasOneAssociation:
+  test_should_rollback_any_changes_if_an_exception_occurred_while_saving: *autosave_rollback
+  test_should_not_save_and_return_false_if_a_callback_cancelled_saving: *autosave_rollback
+  test_should_not_load_the_associated_model: *query_count_tally
+  test_changed_for_autosave_should_handle_cycles: *query_count_tally
+
+TestAutosaveAssociationOnAHasManyAssociation:
+  test_should_rollback_any_changes_if_an_exception_occurred_while_saving: *autosave_rollback
+  test_should_not_save_and_return_false_if_a_callback_cancelled_saving_in_either_create_or_update: *autosave_rollback
+  test_should_not_load_the_associated_models_if_they_were_not_loaded_yet: *query_count_tally
+
+TestAutosaveAssociationOnAHasAndBelongsToManyAssociation:
+  test_should_rollback_any_changes_if_an_exception_occurred_while_saving: *autosave_rollback
+  test_should_not_save_and_return_false_if_a_callback_cancelled_saving_in_either_create_or_update: *autosave_rollback
+  test_should_not_load_the_associated_models_if_they_were_not_loaded_yet: *query_count_tally
+
+TestAutosaveAssociationOnAHasAndBelongsToManyAssociationWithAcceptsNestedAttributes:
+  test_should_rollback_any_changes_if_an_exception_occurred_while_saving: *autosave_rollback
+  test_should_not_save_and_return_false_if_a_callback_cancelled_saving_in_either_create_or_update: *autosave_rollback
+  test_should_not_load_the_associated_models_if_they_were_not_loaded_yet: *query_count_tally
+
+TestAutosaveAssociationValidationsOnAHasManyAssociation:
+  "test_rollbacks_whole_transaction_when_associations_fail_to_#save_due_to_uniqueness_validation_failure": *uniqueness_rollback
+  "test_rollbacks_whole_transaction_and_raises_ActiveRecord::RecordInvalid_when_associations_fail_to_#save!_due_to_uniqueness_validation_failure": *uniqueness_rollback
