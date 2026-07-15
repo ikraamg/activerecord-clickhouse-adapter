@@ -555,6 +555,15 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     columns are untouched. Chosen for AR parity: timestamp round-trips through
     Time objects preserve microseconds by default on every other adapter.
 
+54. **Harness translation rule: bare `DELETE FROM t` gets `WHERE 1`**
+    *(Iteration 27)*: upstream test code cleans join tables with portable-SQL
+    `DELETE FROM t` strings, which ClickHouse's lightweight DELETE rejects
+    (WHERE is mandatory). The adapter itself still passes raw SQL through
+    untouched — the rewrite lives in the harness helper (same family as the
+    inline-DDL rule, #14), pinning the portable form to exactly what the Arel
+    visitor emits for unscoped relation deletes. Replaced two manifest skips
+    with passing tests.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*

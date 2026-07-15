@@ -83,8 +83,28 @@ module ARCompat
       end
     end
   end
+
+  # Second translation rule, same family: upstream tests clean join tables with
+  # portable-SQL `DELETE FROM t` strings. ClickHouse's lightweight DELETE demands an
+  # explicit WHERE clause (SYNTAX_ERROR without one), and the adapter passes raw SQL
+  # through untouched by design — so the harness pins the portable form to `WHERE 1`,
+  # exactly what the Arel visitor emits for unscoped relation deletes.
+  module BareDeleteTranslation
+    BARE_DELETE = /\A\s*delete\s+from\s+(?:`[^`]+`|\S+)\s*\z/i
+
+    def execute(sql, ...)
+      sql = "#{sql} WHERE 1" if sql.match?(BARE_DELETE)
+      super
+    end
+
+    def exec_delete(sql, ...)
+      sql = "#{sql} WHERE 1" if sql.match?(BARE_DELETE)
+      super
+    end
+  end
 end
 ActiveRecord::Base.lease_connection.class.prepend(ARCompat::InlineDDLDefaults)
+ActiveRecord::Base.lease_connection.class.prepend(ARCompat::BareDeleteTranslation)
 
 # Upstream test/support/global_config.rb runs the suites with these settings.
 ActiveRecord.raise_on_missing_required_finder_order_columns = true

@@ -236,12 +236,6 @@ DeprecatedHasOneAssociationsTest:
   test_reset_<association>: *raw_update_without_where
 
 HasAndBelongsToManyAssociationsTest:
-  # The test issues raw `delete from countries_treaties`; ClickHouse's lightweight
-  # DELETE statement requires a WHERE clause (SYNTAX_ERROR).
-  test_should_property_quote_string_primary_keys: &raw_delete_without_where >-
-    raw DELETE without WHERE; ClickHouse lightweight DELETE requires a WHERE clause
-  test_proper_usage_of_primary_keys_and_join_table: *raw_delete_without_where
-
   # ClickHouse resolves HAVING identifiers to SELECT aliases first, so a projected
   # `SUM(salary) AS salary` makes HAVING's own SUM(salary) a nested aggregate.
   test_find_scoped_grouped_having: >-
