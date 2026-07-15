@@ -892,9 +892,11 @@ load in every environment but only production wires the sink. With that seam,
 every raw-SQL read in TRMNL core (ActivityLog, LogFeed, the five admin
 dashboards) ported to AR relations + the gem's `.settings` sugar in the
 `adapter-port` worktree; multi-aggregate projections stay as `select` strings
-(idiomatic AR), and select-alias ordering must use string `order` — hash order
-table-qualifies the alias, which ClickHouse cannot resolve (`events.hour`
-UNKNOWN_IDENTIFIER, probed live).
+(idiomatic AR). Select-alias ordering works with plain hash/symbol `order`:
+Rails only table-qualifies order args found in `columns_hash`, so an alias like
+`hour` renders unqualified (`ORDER BY \`hour\``), which ClickHouse resolves
+(probed live — an earlier note claiming hash order breaks was wrong; it had
+probed hand-qualified SQL, not Rails' rendering).
 
 ## 7. Spec strategy (three tiers)
 

@@ -11,10 +11,11 @@
 > projections. `read_with_status` accepts a relation or a SQL string. The
 > SQL-text unit specs became live-connection specs tagged `:telemetry_proof`
 > (they assert `relation.to_sql` rendered by the real adapter; core CI runs
-> them in its clickhouse job). Live probe recorded: hash `order` on a select
-> alias table-qualifies it (`events.hour`) and ClickHouse rejects it —
-> string `order("hour")` is the seam. 214 core ClickHouse-touching examples
-> green, both repos rubocop clean, gem suite 524 green.
+> them in its clickhouse job). Live probe: hash/symbol `order` on a select
+> alias renders unqualified (Rails only table-qualifies known columns), so
+> the dashboards use plain `order(:hour)` / `order(seen_now: :desc)`.
+> 214 core ClickHouse-touching examples green, both repos rubocop clean,
+> gem suite 524 green.
 
 ## Scope
 
