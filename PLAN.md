@@ -884,6 +884,18 @@ sink connects, caching a guessed `"id"` that later breaks `create!` — the four
 append-only sink models now declare `self.primary_key = nil`. Suite: 524
 examples green on 25.8 and the authored tier green on 26.6.
 
+**Phase 6 (cont.) — core relation port.** *(landed — Iteration 25)* The entry
+require (`activerecord-clickhouse-adapter.rb`) now loads `clickhouse/querying`
+eagerly so consumer models can `include ...ClickHouse::Querying` at boot before
+(or without) a ClickHouse connection loading the adapter — core's sink models
+load in every environment but only production wires the sink. With that seam,
+every raw-SQL read in TRMNL core (ActivityLog, LogFeed, the five admin
+dashboards) ported to AR relations + the gem's `.settings` sugar in the
+`adapter-port` worktree; multi-aggregate projections stay as `select` strings
+(idiomatic AR), and select-alias ordering must use string `order` — hash order
+table-qualifies the alias, which ClickHouse cannot resolve (`events.hour`
+UNKNOWN_IDENTIFIER, probed live).
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

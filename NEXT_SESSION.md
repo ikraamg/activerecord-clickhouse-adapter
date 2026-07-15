@@ -1,30 +1,33 @@
-# Iteration 25: release mechanics or the next corpus
+# Iteration 26: release mechanics or the next corpus
 
-> Status at handoff: Iteration 24 repaired the matrix and derisked the cutover.
-> The two CI failures from the Iteration 23 push are fixed: Rails main renamed
-> `Column#fetch_cast_type` → `cast_type` (pinned-text entries in
-> `skips_edge.yml`), and ClickHouse 26.6's in-statement-DEFAULT rule reached
-> `change_column` through the migration corpus (same placeholder round-trip as
-> `change_column_null`, stored-NULLs guard included, proven live on 26.6.1).
-> Core cutover status: in `~/Documents/GitHub/core.worktrees/adapter-port` all
-> 14 sink migrations run verbatim on a fresh database and every
-> ClickHouse-touching spec is green (12 proof + 100 request + 184 model/task
-> examples). The worktree gained one core-side fix: the four append-only sink
-> models declare `self.primary_key = nil` so an early pk resolution against the
-> unwired Postgres pool can't cache a guessed `"id"` (latent with the incumbent
-> gem too — worth carrying into the real cutover PR). 524 rspec examples green
-> on 25.8, authored tier green on 26.6, rubocop clean.
+> Status at handoff: Iteration 25 finished the core relation port. The gem's
+> entry require now loads `clickhouse/querying` eagerly so consumer models can
+> `include ...ClickHouse::Querying` at boot without a wired ClickHouse pool
+> (uncommitted in the gem repo at handoff). In the
+> `~/Documents/GitHub/core.worktrees/adapter-port` worktree every raw-SQL
+> ClickHouse read (ActivityLog, LogFeed, admin logs/telemetry/device-telemetry/
+> web-requests/sidekiq-jobs) is now an AR relation — hash `where`s, `.settings`
+> sugar for the query caps, `select` strings only for multi-aggregate
+> projections. `read_with_status` accepts a relation or a SQL string. The
+> SQL-text unit specs became live-connection specs tagged `:telemetry_proof`
+> (they assert `relation.to_sql` rendered by the real adapter; core CI runs
+> them in its clickhouse job). Live probe recorded: hash `order` on a select
+> alias table-qualifies it (`events.hour`) and ClickHouse rejects it —
+> string `order("hour")` is the seam. 214 core ClickHouse-touching examples
+> green, both repos rubocop clean, gem suite 524 green.
 
 ## Scope
 
 Pick one (value order):
 
-1. **0.1.0 release mechanics** if Ikraam green-lights: tag, `gem push` (needs
+1. **Commit the gem's eager-querying require** (one-line entry-point change +
+   PLAN/NEXT updates) and push once Ikraam approves the split.
+2. **0.1.0 release mechanics** if Ikraam green-lights: tag, `gem push` (needs
    credentials — stop and ask). CI is green across the matrix.
-2. **Core cutover PR:** the worktree edits (Gemfile swap, `ssl_verify: false`,
-   `migration_context` rename, sink `primary_key = nil`) are ready to become
-   the real cutover PR on core once Ikraam wants it opened.
-3. **Next corpus:** `autosave_association_test`, the `scoping` suites, or
+3. **Core cutover PR:** the worktree edits (Gemfile swap, `ssl_verify: false`,
+   `migration_context` rename, sink `primary_key = nil`, the relation port)
+   are ready to become the real cutover PR on core once Ikraam wants it opened.
+4. **Next corpus:** `autosave_association_test`, the `scoping` suites, or
    `migration_test.rb` itself (the big top-level file — the sub-suites are done).
 
 ## Watch out for (carried forward)
@@ -85,4 +88,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 26.
+read/write path was touched, this file rewritten for Iteration 27.
