@@ -136,6 +136,8 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | ClickHouse 26.6 adds the `Geometry` and `QBit` type families and removes `Object` (the old JSON implementation) from `system.data_type_families` | Iteration 22 probe (26.6.1) |
 | After a lazy `String → Nullable(String)` conversion, 25.8's `IS NULL` reads a stale `.null` subcolumn for pre-conversion parts (reports NULL for real values until OPTIMIZE); `SETTINGS optimize_functions_to_subcolumns = 0` reads the true values — mutations are unaffected | Iteration 22 probe (25.8.28) |
 | ClickHouse 25.3 (the LTS before 25.8) fails 5 authored specs — both JSON-over-the-wire row_binary cases, `lag` window sugar, the type-family census, and the batching EXPLAIN prune check — so 25.8 is the hard support floor, not a soft default | Iteration 22b probe (25.3.14) |
+| ALTER UPDATE type-checks the mutation expression before matching rows: `UPDATE t SET fk = NULL WHERE ...` on a non-Nullable column raises CANNOT_CONVERT_TYPE (code 70) even when zero rows match — row stores no-op instead | Iteration 26 live (25.8.28) |
+| The circular-join AMBIGUOUS_IDENTIFIER (base table reappearing under an alias, code 207) holds on 26.6 and under the legacy analyzer (`enable_analyzer=0`) alike — not a new-analyzer quirk, a dialect rule | Iteration 26 probe (25.8.28 + 26.6.1) |
 
 Local corpora:
 
@@ -897,6 +899,17 @@ Rails only table-qualifies order args found in `columns_hash`, so an alias like
 `hour` renders unqualified (`ORDER BY \`hour\``), which ClickHouse resolves
 (probed live — an earlier note claiming hash order breaks was wrong; it had
 probed hand-qualified SQL, not Rails' rendering).
+
+**Phase 6 (cont.) — scoping corpus.** *(landed — Iteration 26)* Vendored the
+three scoping suites (`default_scoping_test`, `named_scoping_test`,
+`relation_scoping_test`, 233 runs) plus their missing models
+(`without_table`, `cat`, `mentor`) and schema-slice tables (`lions`,
+`mentors`). Six skips, all dialect-honest: two circular self-joins
+(AMBIGUOUS_IDENTIFIER — reconfirmed on 26.6 and under the legacy analyzer),
+three `capture_sql.second` reads that upstream aims at the INSERT after a
+BEGIN we never emit (no transactions), and one association `delete_all`
+nullify whose UPDATE ClickHouse type-checks even at zero matched rows
+(CANNOT_CONVERT_TYPE). Harness now 2,756 runs / 208 skips.
 
 ## 7. Spec strategy (three tiers)
 

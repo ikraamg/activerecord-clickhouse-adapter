@@ -1,38 +1,36 @@
-# Iteration 26: release mechanics or the next corpus
+# Iteration 27: autosave corpus or migration_test.rb
 
-> Status at handoff: Iteration 25 finished the core relation port. The gem's
-> entry require now loads `clickhouse/querying` eagerly so consumer models can
-> `include ...ClickHouse::Querying` at boot without a wired ClickHouse pool
-> (uncommitted in the gem repo at handoff). In the
-> `~/Documents/GitHub/core.worktrees/adapter-port` worktree every raw-SQL
-> ClickHouse read (ActivityLog, LogFeed, admin logs/telemetry/device-telemetry/
-> web-requests/sidekiq-jobs) is now an AR relation — hash `where`s, `.settings`
-> sugar for the query caps, `select` strings only for multi-aggregate
-> projections. `read_with_status` accepts a relation or a SQL string. The
-> SQL-text unit specs became live-connection specs tagged `:telemetry_proof`
-> (they assert `relation.to_sql` rendered by the real adapter; core CI runs
-> them in its clickhouse job). Live probe: hash/symbol `order` on a select
-> alias renders unqualified (Rails only table-qualifies known columns), so
-> the dashboards use plain `order(:hour)` / `order(seen_now: :desc)`.
-> 214 core ClickHouse-touching examples green, both repos rubocop clean,
-> gem suite 524 green.
+> Status at handoff: Iteration 26 landed the scoping corpus. The three suites
+> (`default_scoping_test`, `named_scoping_test`, `relation_scoping_test` —
+> 233 runs) are vendored byte-exact from v8.1.3 with their missing models
+> (`without_table`, `cat`, `mentor`) and schema-slice tables (`lions`,
+> `mentors`). Six manifest skips, all dialect-honest (see PLAN.md §6). Two new
+> grounding facts: ALTER UPDATE type-checks its expression even at zero
+> matched rows (CANNOT_CONVERT_TYPE on `SET fk = NULL` into non-Nullable), and
+> the circular-join AMBIGUOUS_IDENTIFIER holds on 26.6 and under the legacy
+> analyzer alike. Harness: 2,756 runs / 208 skips, green twice consecutively
+> (seeds 63425 + random). Gem suite 524 green, rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
-1. **Commit the gem's eager-querying require** (one-line entry-point change +
-   PLAN/NEXT updates) and push once Ikraam approves the split.
-2. **0.1.0 release mechanics** if Ikraam green-lights: tag, `gem push` (needs
-   credentials — stop and ask). CI is green across the matrix.
-3. **Core cutover PR:** the worktree edits (Gemfile swap, `ssl_verify: false`,
-   `migration_context` rename, sink `primary_key = nil`, the relation port)
-   are ready to become the real cutover PR on core once Ikraam wants it opened.
-4. **Next corpus:** `autosave_association_test`, the `scoping` suites, or
-   `migration_test.rb` itself (the big top-level file — the sub-suites are done).
+1. **Next corpus:** `autosave_association_test` (associations write-path we
+   haven't exercised) or `migration_test.rb` itself (the big top-level file —
+   the sub-suites are done).
+2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
+   the published 0.1.0; push the branch and open the PR when Ikraam wants it.
+3. **Release housekeeping:** CHANGELOG still says "0.1.0 (unreleased)" though
+   the gem is on rubygems.org — date it, and optionally cut a GitHub release
+   from the existing v0.1.0 tag.
 
 ## Watch out for (carried forward)
 
+- One full-harness run (seed 63425, pre-fix tree) showed 110 cross-suite
+  failures that vanished on the identical re-run — fixture-state flake, not
+  reproduced since. If a full run fails wholesale, re-run the same seed before
+  debugging; if it ever reproduces, suspect the teardown TRUNCATE loop racing
+  fixture reload.
 - `t.datetime` now defaults to precision 6. Any consumer schema diff noise of
   `DateTime64(3)` → `DateTime64(6)` is this, not a bug; explicit `precision: 3`
   restores the old shape.
@@ -89,4 +87,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 27.
+read/write path was touched, this file rewritten for Iteration 28.

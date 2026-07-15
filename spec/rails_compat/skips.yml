@@ -326,3 +326,24 @@ ActiveRecord::Migration::InvalidOptionsTest:
   test_add_reference_with_invalid_options: *extended_option_list
   test_create_table_with_invalid_options: *extended_option_list
   test_add_index_with_invalid_options: *extended_option_list
+
+DefaultScopingTest:
+  # ClickHouse has no transactions, so create! emits a lone INSERT. These tests read
+  # capture_sql.second — the slot the INSERT lands in upstream, after BEGIN.
+  test_combined_default_scope_without_and_with_all_queries_works: &insert_is_first_sql >-
+    no transactions: capture_sql sees [INSERT], not [BEGIN, INSERT]; .second is nil
+  test_default_scope_runs_on_create: *insert_is_first_sql
+  test_default_scope_with_all_queries_runs_on_create: *insert_is_first_sql
+
+NamedScopingTest:
+  test_scopes_are_reset_on_association_reload: >-
+    delete_all nullifies the FK on zero rows (destroy_all already ran); row stores
+    skip the no-op, but ClickHouse type-checks the mutation expression itself and
+    rejects NULL into non-Nullable post_id (CANNOT_CONVERT_TYPE, code 70)
+
+RelationScopingTest:
+  # Probed live on 25.8 and 26.6: both analyzers reject the base table reappearing
+  # under an alias in a circular join (AMBIGUOUS_IDENTIFIER, code 207).
+  test_circular_joins_with_scoping_does_not_crash: &circular_self_join >-
+    self-join with unaliased base table raises AMBIGUOUS_IDENTIFIER
+  test_circular_left_joins_with_scoping_does_not_crash: *circular_self_join
