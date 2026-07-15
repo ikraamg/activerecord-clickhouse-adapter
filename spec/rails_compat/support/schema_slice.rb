@@ -42,25 +42,29 @@ module ARCompat
       comment_overlapping_counter_caches comments
       companies computers
       computers_developers contracts countries countries_treaties courses courses_professors
-      cpk_authors cpk_books cpk_chapters cpk_comments cpk_order_tags cpk_orders cpk_posts
+      cpk_authors cpk_books cpk_chapters cpk_comments cpk_order_agreements cpk_order_tags
+      cpk_orders cpk_posts
       cpk_reviews cpk_tags customer_carriers customers
       dashboards departments developers
       developers_projects
-      dog_lovers dogs drink_designers edges engines enrollments entrants essays families
-      family_trees funny_jokes having humans
-      images interests
-      invoices jobs jobs_pool kitchens lessons lessons_students line_items lions magazines mateys
-      member_details member_types members memberships mentors
-      minimalistics minivans nodes non_primary_keys
-      numeric_data organizations owners parrots parrots_pirates parrots_treasures people
-      peoples_treasures pets pets_treasures pirates price_estimates professors
+      dog_lovers dogs drink_designers edges electrons engines enrollments entrants essays
+      eyes faces families
+      family_trees funny_jokes guitars having humans
+      images interests iris
+      invoices jobs jobs_pool kitchens lessons lessons_students line_items lions liquid
+      magazines mateys
+      member_details member_types members memberships mentors mice
+      minimalistics minivans molecules nodes non_primary_keys
+      numeric_data orders organizations owners parrots parrots_pirates parrots_treasures people
+      peoples_treasures pets pets_treasures pirates price_estimates prisoners professors
       program_offerings programs
       post_comments_counts posts projects ratings readers records references rooms
       sections seminars sessions
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
       ship_parts ships shop_accounts sinks
-      speedometers sponsors students subscribers subscriptions taggings tags tires topics
-      toooooooooooooooooooooooooooooooooo_long_table_names toys treasures treaties trees
+      speedometers sponsors squeaks students subscribers subscriptions taggings tags tires topics
+      toooooooooooooooooooooooooooooooooo_long_table_names toys translations treasures treaties
+      trees tuning_pegs
       user_comments_counts users warehouse-things weirds wheels zines
     ].freeze
 
@@ -490,6 +494,12 @@ module ARCompat
         t.string :attached_reason, null: true
       end
 
+      connection.create_table :cpk_order_agreements, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :order_id, limit: 8, null: true
+        t.string :signature, null: true
+      end
+
       connection.create_table :cpk_tags, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name
@@ -531,9 +541,33 @@ module ARCompat
         t.integer :sink_id, limit: 8
       end
 
+      connection.create_table :electrons, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :molecule_id, limit: 8, null: true
+        t.string :name, null: true
+      end
+
       connection.create_table :engines, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :car_id, limit: 8, null: true
+      end
+
+      connection.create_table :eyes, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+      end
+
+      connection.create_table :faces, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :description, null: true
+        t.integer :human_id, limit: 8, null: true
+        t.integer :polymorphic_human_id, limit: 8, null: true
+        t.string :polymorphic_human_type, null: true
+        t.integer :poly_human_without_inverse_id, limit: 8, null: true
+        t.string :poly_human_without_inverse_type, null: true
+        t.integer :puzzled_polymorphic_human_id, limit: 8, null: true
+        t.string :puzzled_polymorphic_human_type, null: true
+        t.integer :super_human_id, limit: 8, null: true
+        t.string :super_human_type, null: true
       end
 
       connection.create_table :entrants, force: true, order: "id" do |t|
@@ -577,6 +611,11 @@ module ARCompat
         t.string :name, null: true
       end
 
+      connection.create_table :guitars, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :color, null: true
+      end
+
       connection.create_table :having, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :where, null: true
@@ -600,6 +639,13 @@ module ARCompat
         t.integer :polymorphic_human_id, limit: 8, null: true
         t.string :polymorphic_human_type, null: true
         t.integer :zine_id, limit: 8, null: true
+      end
+
+      # Upstream names this table :iris (singular) — Iris.table_name resolves to it.
+      connection.create_table :iris, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :eye_id, limit: 8, null: true
+        t.string :color, null: true
       end
 
       connection.create_table :invoices, force: true, order: "id" do |t|
@@ -635,6 +681,11 @@ module ARCompat
       connection.create_table :lessons_students, force: true, order: "(lesson_id, student_id)" do |t|
         t.integer :lesson_id, limit: 8
         t.integer :student_id, limit: 8
+      end
+
+      connection.create_table :liquid, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
       end
 
       connection.create_table :line_items, force: true, order: "id" do |t|
@@ -696,6 +747,11 @@ module ARCompat
         t.integer :id, limit: 8
       end
 
+      connection.create_table :mice, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
       connection.create_table :minimalistics, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :expires_at, limit: 8, null: true
@@ -724,6 +780,12 @@ module ARCompat
         t.decimal :atoms_in_universe, precision: 55, scale: 0, null: true
       end
 
+      connection.create_table :molecules, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :liquid_id, limit: 8, null: true
+        t.string :name, null: true
+      end
+
       connection.create_table :nodes, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :tree_id, limit: 8, null: true
@@ -737,6 +799,13 @@ module ARCompat
       connection.create_table :non_primary_keys, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.datetime :created_at, precision: 6, null: true
+      end
+
+      connection.create_table :orders, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :billing_customer_id, limit: 8, null: true
+        t.integer :shipping_customer_id, limit: 8, null: true
       end
 
       connection.create_table :organizations, force: true, order: "id" do |t|
@@ -880,6 +949,11 @@ module ARCompat
         t.string :name, null: true
       end
 
+      connection.create_table :prisoners, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :ship_id, limit: 8, null: true
+      end
+
       connection.create_table :professors, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name
@@ -995,6 +1069,11 @@ module ARCompat
         t.datetime :updated_on, precision: 6, null: true
       end
 
+      connection.create_table :squeaks, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :mouse_id, limit: 8, null: true
+      end
+
       connection.create_table :speedometers, force: true, order: "speedometer_id" do |t|
         t.string :speedometer_id
         t.string :name, null: true
@@ -1045,6 +1124,20 @@ module ARCompat
         t.integer :id, limit: 8
         t.string :name, null: true
         t.integer :taggings_count, null: true, default: 0
+      end
+
+      connection.create_table :translations, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :locale
+        t.string :key
+        t.string :value
+        t.integer :attachment_id, limit: 8, null: true
+      end
+
+      connection.create_table :tuning_pegs, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :guitar_id, limit: 8, null: true
+        t.float :pitch, null: true
       end
 
       connection.create_table :tires, force: true, order: "id" do |t|
