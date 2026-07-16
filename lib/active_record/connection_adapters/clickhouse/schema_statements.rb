@@ -311,9 +311,10 @@ module ActiveRecord
           case type.to_s
           when "integer" then integer_to_sql(limit)
           when "bigint" then "Int64"
-          when "string", "text" then "String"
+          # binary/blob included: ClickHouse String is an arbitrary byte sequence.
+          when "string", "text", "binary", "blob" then "String"
           when "float" then "Float64"
-          when "decimal", "numeric" then "Decimal(#{precision || 38}, #{scale || 10})"
+          when "decimal", "numeric" then decimal_to_sql(precision, scale)
           # Rails' shared tests pass mysql-style parenthesized precision ("datetime(6)");
           # the naked default matches Rails' microsecond convention, not CH's ms.
           when /\A(?:datetime|timestamp)(?:\((\d+)\))?\z/
@@ -610,6 +611,20 @@ module ActiveRecord
             { engine: "ReplacingMergeTree", order: "key" }.merge(options)
           else
             options
+          end
+        end
+
+        # Bare precision means scale 0 (SQL convention; Decimal(2, 10) is
+        # ARGUMENT_OUT_OF_BOUND — scale may not exceed precision). Bare scale is the
+        # same ArgumentError Rails' other adapters raise. No bounds at all keeps the
+        # wide Decimal(38, 10) default.
+        def decimal_to_sql(precision, scale)
+          if precision
+            "Decimal(#{precision}, #{scale || 0})"
+          elsif scale
+            raise ArgumentError, "Error adding decimal column: precision cannot be empty if scale is specified"
+          else
+            "Decimal(38, 10)"
           end
         end
 

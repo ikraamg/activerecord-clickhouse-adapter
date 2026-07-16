@@ -107,6 +107,27 @@ RSpec.describe "ClickHouse schema statements" do
     expect(connection.type_to_sql("datetime(6)")).to eq("DateTime64(6, 'UTC')")
   end
 
+  it "defaults decimal scale to zero when only precision is given" do
+    expect(connection.type_to_sql(:decimal, precision: 2)).to eq("Decimal(2, 0)")
+  end
+
+  it "keeps the wide Decimal(38, 10) default when precision is omitted" do
+    expect(connection.type_to_sql(:decimal)).to eq("Decimal(38, 10)")
+  end
+
+  it "rejects a decimal scale without a precision like Rails' other adapters" do
+    expect { connection.type_to_sql(:decimal, scale: 10) }
+      .to raise_error(ArgumentError, "Error adding decimal column: precision cannot be empty if scale is specified")
+  end
+
+  it "maps binary to String (ClickHouse strings are byte-safe)" do
+    expect(connection.type_to_sql(:binary)).to eq("String")
+  end
+
+  it "maps blob to String like binary" do
+    expect(connection.type_to_sql(:blob)).to eq("String")
+  end
+
   it "supports datetime precision" do
     expect(connection.supports_datetime_with_precision?).to be(true)
   end
