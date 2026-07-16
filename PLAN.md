@@ -988,6 +988,18 @@ first: attribute-less creates rendered Rails' `DEFAULT VALUES`, now
 BEGIN/COMMIT query tallies, three anonymous in-test models needing a
 client-side pk. Harness: 3,203 runs / 247 skips.
 
+**Phase 6 (cont.) — serialized_attribute + enum corpora.** *(landed —
+Iteration 30)* Vendored `serialized_attribute_test.rb` (both classes — the
+YAML-safe-load subclass reruns the whole suite) and `enum_test.rb`, 203 runs
+together, with the one missing model (traffic_light) and its slice table. No
+adapter gaps; the corpus instead exposed a real harness bug (ledger #57): the
+manifest-skip hook ran before class setup, so skipped tests' teardowns wrote
+captured-but-never-set globals back as nil, poisoning later YAML tests. The
+hook moved to `after_setup`, restoring upstream's inline-skip semantics. Ten
+manifest skips: one new seam (`no_last_insert_id` — raw `connection.insert`
+expects the server to report the new row's id, ClickHouse has none) and the
+rest anonymous-model pk. Harness: 3,406 runs / 258 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

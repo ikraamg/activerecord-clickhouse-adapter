@@ -1,15 +1,16 @@
-# Iteration 30: core cutover PR, release housekeeping, or the next corpus
+# Iteration 31: core cutover PR or the next corpus
 
-> Status at handoff: Iteration 29 landed the nested_attributes corpus
-> (`nested_attributes_test.rb`, 194 runs) with the entry/message delegated-type
-> models and slice tables. One real adapter gap fixed TDD-style (ledger #56):
-> attribute-less creates rendered `INSERT INTO t DEFAULT VALUES`, which
-> ClickHouse can't parse — the adapter now emits `FORMAT JSONEachRow {}`, the
-> probed equivalent (one row, all table defaults, no column name needed). Five
-> new skips, all established seams (query tallies, anonymous-model pk).
-> Harness: 3,203 runs / 247 skips. Gem suite 530 green, rubocop zero. CI green
-> across the matrix on the Iteration 28 push (including the previously-red
-> AR-edge job).
+> Status at handoff: Iteration 30 landed the serialized_attribute + enum
+> corpora (`serialized_attribute_test.rb` incl. its YAML-safe-load subclass +
+> `enum_test.rb`, 203 runs together) with the traffic_light model and slice
+> table. No adapter gaps — but the corpus exposed a real harness bug (ledger
+> #57): the manifest-skip hook fired *before* class setup, so a skipped test's
+> teardown wrote captured-but-never-set globals back as nil
+> (`ActiveRecord.yaml_column_permitted_classes`), poisoning later YAML tests.
+> The hook now runs in `after_setup`, matching upstream's inline-skip
+> semantics. Ten manifest skips: one new seam (`no_last_insert_id`) plus
+> anonymous-model pk. Harness: 3,406 runs / 258 skips. Gem suite 530 green,
+> rubocop zero.
 
 ## Scope
 
@@ -17,13 +18,13 @@ Pick one (value order):
 
 1. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-2. **Release housekeeping:** CHANGELOG still says "0.1.0 (unreleased)" though
-   the gem is on rubygems.org — date it, note the Iteration 28/29 DDL and
-   empty-insert fixes for 0.1.1, and optionally cut a GitHub release from the
-   v0.1.0 tag.
-3. **Next corpus:** remaining unvendored suites worth mining —
-   `persistence_test` siblings (`update_all`/`delete_all` variants),
-   `serialized_attribute_test`, or `enum_test`.
+2. **Next corpus:** remaining unvendored suites worth mining —
+   `dirty_test` (attribute tracking against real reads/writes),
+   `attribute_methods_test`, or `timestamp_test` (touch semantics on a
+   transactionless store).
+3. **0.1.1 release:** the Unreleased CHANGELOG section already holds the
+   decimal-DDL, binary/blob, and empty-insert fixes; cut it when Ikraam wants
+   consumers to pick those up.
 
 ## Watch out for (carried forward)
 
@@ -37,6 +38,9 @@ Pick one (value order):
   in-process, so the mechanism is still unproven. Policy: re-run the same seed
   before debugging; if it ever reproduces deterministically, give the harness
   subprocess its own database (cheap, kills the shared-namespace hazard).
+- Manifest skips now fire in `after_setup` (ledger #57). If a vendored class's
+  *setup itself* breaks on this adapter, an `after_setup` skip is too late —
+  that case needs a class-level exclusion instead; none exist yet.
 - The tmpfs container fills up after several consecutive full-harness runs
   (NOT_ENOUGH_SPACE, code 243). `docker compose down && docker compose up -d
   --wait` is the factory reset. After the reset, give the port proxy ~10s —
@@ -100,4 +104,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 31.
+read/write path was touched, this file rewritten for Iteration 32.

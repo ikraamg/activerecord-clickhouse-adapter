@@ -63,7 +63,7 @@ module ARCompat
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
       ship_parts ships shop_accounts sinks
       speedometers sponsors squeaks students subscribers subscriptions taggings tags tires topics
-      toooooooooooooooooooooooooooooooooo_long_table_names toys translations treasures treaties
+      toooooooooooooooooooooooooooooooooo_long_table_names toys traffic_lights translations treasures treaties
       trees tuning_pegs
       user_comments_counts users warehouse-things weirds wheels zines
     ].freeze
@@ -1157,6 +1157,15 @@ module ARCompat
       connection.create_table :tires, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :car_id, limit: 8, null: true
+      end
+
+      connection.create_table :traffic_lights, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :location, null: true
+        t.string :state, null: true
+        t.text :long_state
+        t.datetime :created_at, null: true
+        t.datetime :updated_at, null: true
       end
 
       connection.create_table :treaties, force: true, order: "treaty_id" do |t|

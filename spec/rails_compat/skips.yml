@@ -423,3 +423,23 @@ TestIndexErrorsWithNestedAttributesOnlyMode:
 
 TestNestedAttributesWithExtend:
   test_extend_affects_nested_attributes: *anonymous_model_primary_key
+
+# serialized_attribute/enum corpora (Iteration 30). One new seam (no last-insert-id);
+# the rest reuse the anonymous-model primary-key seam.
+SerializedAttributeTest:
+  test_json_read_legacy_null: &no_last_insert_id >-
+    raw connection.insert expects the server to report the new row's id;
+    ClickHouse has no last-insert-id, so the adapter returns none
+  test_json_read_db_null: *no_last_insert_id
+  test_serialized_attribute_on_alias_attribute: *anonymous_model_primary_key
+  test_serialized_attribute_can_be_defined_in_abstract_classes: *anonymous_model_primary_key
+
+SerializedAttributeTestWithYamlSafeLoad:
+  test_json_read_legacy_null: *no_last_insert_id
+  test_json_read_db_null: *no_last_insert_id
+  test_serialized_attribute_on_alias_attribute: *anonymous_model_primary_key
+  test_serialized_attribute_can_be_defined_in_abstract_classes: *anonymous_model_primary_key
+
+EnumTest:
+  test_enum_with_alias_attribute: *anonymous_model_primary_key
+  "test_serializable?_with_large_number_label": *anonymous_model_primary_key

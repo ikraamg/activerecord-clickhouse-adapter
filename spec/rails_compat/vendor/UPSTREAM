@@ -21,6 +21,8 @@ Vendored from rails/rails tag v8.1.3 (activerecord/test/), byte-exact:
 - cases/autosave_association_test.rb
 - cases/migration_test.rb
 - cases/nested_attributes_test.rb
+- cases/serialized_attribute_test.rb
+- cases/enum_test.rb
 - migrations/* (the fixture migration tree MIGRATIONS_ROOT points at)
 - cases/validations_repair_helper.rb
 - models/* (every model the vendored cases require, incl. models/dats/*,
