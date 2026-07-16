@@ -106,6 +106,12 @@ end
 ActiveRecord::Base.lease_connection.class.prepend(ARCompat::InlineDDLDefaults)
 ActiveRecord::Base.lease_connection.class.prepend(ARCompat::BareDeleteTranslation)
 
+# Upstream helper.rb registers this stub adapter; ContactFakeColumns models connect
+# to it to fake schema without a live table.
+ActiveRecord::ConnectionAdapters.register(
+  "fake", "FakeActiveRecordAdapter", File.expand_path("../../vendor/support/fake_adapter.rb", __dir__)
+)
+
 # Upstream test/support/global_config.rb runs the suites with these settings.
 ActiveRecord.raise_on_missing_required_finder_order_columns = true
 ActiveRecord.raise_on_assign_to_attr_readonly = true
@@ -134,6 +140,24 @@ module WaitForAsyncTestHelper
     end
 
     raise Timeout::Error, "The async executor wasn't drained after #{timeout} seconds"
+  end
+end
+
+# Upstream defines this in test/cases/helper.rb; dirty/attribute tests include it to
+# toggle time_zone_aware_attributes around a block.
+module InTimeZone
+  private
+
+  def in_time_zone(zone)
+    old_zone = Time.zone
+    old_tz = ActiveRecord::Base.time_zone_aware_attributes
+
+    Time.zone = zone ? ActiveSupport::TimeZone[zone] : nil
+    ActiveRecord::Base.time_zone_aware_attributes = !zone.nil?
+    yield
+  ensure
+    Time.zone = old_zone
+    ActiveRecord::Base.time_zone_aware_attributes = old_tz
   end
 end
 
@@ -221,6 +245,16 @@ module ActiveRecord
 
     def quote_table_name(name)
       ActiveRecord::Base.adapter_class.quote_table_name(name)
+    end
+
+    # Upstream test/cases/test_case.rb; schema-cache tests swap in a throwaway pool.
+    def with_temporary_connection_pool(&)
+      pool_config = ActiveRecord::Base.connection_pool.pool_config
+      new_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(pool_config)
+
+      pool_config.stub(:pool, new_pool, &)
+    ensure
+      new_pool&.disconnect!
     end
 
     # Upstream defines these in test/cases/test_case.rb.

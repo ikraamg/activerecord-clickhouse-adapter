@@ -598,6 +598,14 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     poisoned every later YAML-serialization test in the process. The hook now
     lives in `after_setup`, matching upstream's inline-skip semantics exactly.
 
+58. **Mutations refuse key columns — visible under partial_writes off**
+    *(Iteration 31)*: `ALTER TABLE … UPDATE` cannot SET a sorting-key column
+    (CANNOT_UPDATE_COLUMN, code 420, probed live). Normal Rails updates never
+    touch the pk, but `partial_writes = false` makes every UPDATE write all
+    columns including `id`, so those upstream tests skip with the
+    `key_column_update` seam rather than the adapter special-casing the
+    column list.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -999,6 +1007,20 @@ hook moved to `after_setup`, restoring upstream's inline-skip semantics. Ten
 manifest skips: one new seam (`no_last_insert_id` — raw `connection.insert`
 expects the server to report the new row's id, ClickHouse has none) and the
 rest anonymous-model pk. Harness: 3,406 runs / 258 skips.
+
+**Phase 6 (cont.) — dirty + timestamp + attribute_methods corpora.** *(landed —
+Iteration 31)* Vendored `dirty_test.rb`, `timestamp_test.rb`, and
+`attribute_methods_test.rb` (234 runs together) with five missing models
+(task, book_identifier, boolean, contact, keyboard), four slice tables
+(binaries, booleans, book_identifiers, keyboards, tasks), two fixture sets,
+and three upstream helper ports: the `fake` stub adapter registration
+(ContactFakeColumns models connect to it), `InTimeZone`/`DdlHelper`, and
+`with_temporary_connection_pool`. No adapter gaps. 37 manifest skips: one new
+seam (`key_column_update` — partial_writes off makes Rails update every
+column including the sorting key, which ClickHouse mutations refuse, code
+420), three `no_time_type` (bonus_time rides the DateTime64 TIME stand-in),
+two composite-prefetch, and the rest the anonymous-model pk seam (both suites
+lean heavily on in-test `Class.new` models). Harness: 3,642 runs / 295 skips.
 
 ## 7. Spec strategy (three tiers)
 

@@ -1,16 +1,15 @@
-# Iteration 31: core cutover PR or the next corpus
+# Iteration 32: core cutover PR, 0.1.1, or the next corpus
 
-> Status at handoff: Iteration 30 landed the serialized_attribute + enum
-> corpora (`serialized_attribute_test.rb` incl. its YAML-safe-load subclass +
-> `enum_test.rb`, 203 runs together) with the traffic_light model and slice
-> table. No adapter gaps — but the corpus exposed a real harness bug (ledger
-> #57): the manifest-skip hook fired *before* class setup, so a skipped test's
-> teardown wrote captured-but-never-set globals back as nil
-> (`ActiveRecord.yaml_column_permitted_classes`), poisoning later YAML tests.
-> The hook now runs in `after_setup`, matching upstream's inline-skip
-> semantics. Ten manifest skips: one new seam (`no_last_insert_id`) plus
-> anonymous-model pk. Harness: 3,406 runs / 258 skips. Gem suite 530 green,
-> rubocop zero.
+> Status at handoff: Iterations 30–31 landed five corpora. 30: serialized
+> attribute + enum (203 runs; traffic_light model; harness skip-hook bug fixed,
+> ledger #57 — manifest skips now fire in `after_setup`). 31: dirty +
+> timestamp + attribute_methods (234 runs; five models, five slice tables,
+> `fake` adapter registration, `InTimeZone`/`DdlHelper`/
+> `with_temporary_connection_pool` helper ports). No adapter gaps in either.
+> New seams: `no_last_insert_id` (raw insert can't report a row id) and
+> `key_column_update` (partial_writes off updates the sorting key, code 420 —
+> ledger #58). Harness: 3,642 runs / 295 skips. Gem suite 530 green, rubocop
+> zero.
 
 ## Scope
 
@@ -19,9 +18,8 @@ Pick one (value order):
 1. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
 2. **Next corpus:** remaining unvendored suites worth mining —
-   `dirty_test` (attribute tracking against real reads/writes),
-   `attribute_methods_test`, or `timestamp_test` (touch semantics on a
-   transactionless store).
+   `calculations_test` siblings, `date_time_precision_test`, `time_precision_test`,
+   `defaults_test`, or `reflection_test`.
 3. **0.1.1 release:** the Unreleased CHANGELOG section already holds the
    decimal-DDL, binary/blob, and empty-insert fixes; cut it when Ikraam wants
    consumers to pick those up.
@@ -104,4 +102,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 32.
+read/write path was touched, this file rewritten for Iteration 33.

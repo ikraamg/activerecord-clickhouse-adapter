@@ -443,3 +443,56 @@ SerializedAttributeTestWithYamlSafeLoad:
 EnumTest:
   test_enum_with_alias_attribute: *anonymous_model_primary_key
   "test_serializable?_with_large_number_label": *anonymous_model_primary_key
+
+# dirty corpus (Iteration 30). One new seam: partial_writes off makes Rails
+# write every column on UPDATE, including the sorting-key column, which
+# ClickHouse mutations refuse (CANNOT_UPDATE_COLUMN, code 420, probed live).
+DirtyTest:
+  test_partial_update: &key_column_update >-
+    with partial_writes off Rails updates every column including the sorting
+    key; ClickHouse mutations cannot modify key columns (code 420)
+  test_partial_update_with_optimistic_locking: *key_column_update
+  test_virtual_attributes_are_not_written_with_partial_writes_off: *anonymous_model_primary_key
+  test_in_place_mutation_for_binary: *anonymous_model_primary_key
+  "test_changed?_in_after_callbacks_returns_false": *anonymous_model_primary_key
+  "test_changed?_in_around_callbacks_after_yield_returns_false": *anonymous_model_primary_key
+
+# timestamp corpus (Iteration 30). Touch tests define throwaway Class.new(Pet)-style
+# models inside each test body — the established anonymous-model seam.
+TimestampTest:
+  test_changing_parent_of_a_record_touches_both_new_and_old_parent_record: *anonymous_model_primary_key
+  test_changing_parent_of_a_record_touches_both_new_and_old_polymorphic_parent_record_changes_with_other_class: *anonymous_model_primary_key
+  test_changing_parent_of_a_record_touches_both_new_and_old_polymorphic_parent_record_changes_within_same_class: *anonymous_model_primary_key
+  test_clearing_association_touches_the_old_record: *anonymous_model_primary_key
+  test_no_touching_with_callbacks: *anonymous_model_primary_key
+  test_saving_a_record_with_a_belongs_to_that_specifies_touching_a_specific_attribute_the_parent_should_update_that_attribute: *anonymous_model_primary_key
+  test_saving_an_unchanged_record_with_a_mutating_before_save_callback_updates_its_timestamp: *anonymous_model_primary_key
+  test_saving_an_unchanged_record_with_a_mutating_before_update_callback_updates_its_timestamp: *anonymous_model_primary_key
+  test_saving_an_unchanged_record_with_a_non_mutating_before_update_callback_does_not_update_its_timestamp: *anonymous_model_primary_key
+  test_timestamp_column_values_are_present_in_update_callbacks: *anonymous_model_primary_key
+  test_touching_a_record_touches_parent_record_and_grandparent_record: *anonymous_model_primary_key
+  test_touching_a_record_touches_polymorphic_record: *anonymous_model_primary_key
+  test_touching_a_record_with_a_belongs_to_that_uses_a_counter_cache_should_update_the_parent: *anonymous_model_primary_key
+
+# attribute_methods corpus (Iteration 30). All established seams: the suite's
+# setup builds @target as an anonymous topics model, cpk creates hit the
+# composite-prefetch seam, and bonus_time rides the DateTime64 TIME stand-in.
+AttributeMethodsTest:
+  test_accessed_fields: *anonymous_model_primary_key
+  test_attribute_names_with_a_custom_select: *anonymous_model_primary_key
+  "test_came_from_user?": *anonymous_model_primary_key
+  test_inherited_custom_accessors: *anonymous_model_primary_key
+  test_inherited_custom_accessors_with_reserved_names: *anonymous_model_primary_key
+  test_on_the_fly_super_invokable_generated_attribute_methods_via_method_missing: *anonymous_model_primary_key
+  test_on-the-fly_super-invokable_generated_attribute_predicates_via_method_missing: *anonymous_model_primary_key
+  test_read_attributes_after_type_cast_on_a_date: *anonymous_model_primary_key
+  test_setting_time_zone-aware_read_attribute: *anonymous_model_primary_key
+  test_setting_a_time_zone-aware_time_with_DST: *anonymous_model_primary_key
+  test_time_zone-aware_attribute_saved: *anonymous_model_primary_key
+  test_time_zone-aware_custom_attributes: *anonymous_model_primary_key
+  test_setting_a_time_zone-aware_time_in_the_current_time_zone: *no_time_type
+  test_removing_time_zone-aware_types: *no_time_type
+  test_time_zone-aware_attributes_do_not_recurse_infinitely_on_invalid_values: *no_time_type
+  "test_#id_value_alias_returns_id_column_only_for_composite_primary_key_models": *composite_prefetch
+  "test_aliasing_`id`_attribute_allows_reading_the_column_value_for_a_CPK_model": *composite_prefetch
+  test_attribute_names_on_a_queried_record: *anonymous_model_primary_key

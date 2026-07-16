@@ -36,7 +36,7 @@ module ARCompat
       1_need_quoting accounts admin_users aircraft articles articles_magazines articles_tags
       attachments audit_logs author_addresses
       author_favorites authors
-      auto_id_tests birds books bulbs cake_designers carriers cars carts
+      auto_id_tests binaries birds book_identifiers books booleans bulbs cake_designers carriers cars carts
       categories categories_posts categorizations chefs citations clothing_items clubs
       cold_jokes colleges colnametests columns
       comment_overlapping_counter_caches comments
@@ -51,7 +51,7 @@ module ARCompat
       eyes faces families
       family_trees funny_jokes guitars having humans
       images interests iris
-      invoices jobs jobs_pool kitchens lessons lessons_students line_items lions liquid
+      invoices jobs jobs_pool keyboards kitchens lessons lessons_students line_items lions liquid
       magazines mateys
       member_details member_types members memberships mentors messages mice
       minimalistics minivans molecules nodes non_primary_keys
@@ -62,7 +62,7 @@ module ARCompat
       sections seminars sessions
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
       ship_parts ships shop_accounts sinks
-      speedometers sponsors squeaks students subscribers subscriptions taggings tags tires topics
+      speedometers sponsors squeaks students subscribers subscriptions taggings tags tasks tires topics
       toooooooooooooooooooooooooooooooooo_long_table_names toys traffic_lights translations treasures treaties
       trees tuning_pegs
       user_comments_counts users warehouse-things weirds wheels zines
@@ -195,11 +195,32 @@ module ARCompat
         t.integer :favorite_author_id, limit: 8, null: true
       end
 
+      connection.create_table :binaries, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.binary :data, null: true
+        t.binary :short_data, null: true
+        t.blob :blob_data, null: true
+      end
+
       connection.create_table :birds, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
         t.string :color, null: true
         t.integer :pirate_id, limit: 8, null: true
+      end
+
+      connection.create_table :book_identifiers, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :book_id, limit: 8, null: true
+        t.string :id_type
+        t.string :id_value
+      end
+
+      connection.create_table :booleans, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.boolean :value, null: true
+        t.boolean :has_fun, null: false, default: false
       end
 
       # Upstream names the pk column "ID"; the DATS tests never touch the custom
@@ -677,6 +698,11 @@ module ARCompat
         t.integer :user_id, limit: 8
       end
 
+      connection.create_table :keyboards, force: true, order: "key_number" do |t|
+        t.integer :key_number, limit: 8
+        t.string :name, null: true
+      end
+
       connection.create_table :kitchens, force: true, order: "id" do |t|
         t.integer :id, limit: 8
       end
@@ -1138,6 +1164,12 @@ module ARCompat
         t.integer :id, limit: 8
         t.string :name, null: true
         t.integer :taggings_count, null: true, default: 0
+      end
+
+      connection.create_table :tasks, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.datetime :starting, null: true
+        t.datetime :ending, null: true
       end
 
       connection.create_table :translations, force: true, order: "id" do |t|

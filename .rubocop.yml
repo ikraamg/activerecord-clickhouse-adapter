@@ -56,6 +56,8 @@ Metrics/ClassLength:
     - lib/active_record/connection_adapters/clickhouse/http_connection.rb
     # One flat dump hook per schema object kind (columns, MVs, projections).
     - lib/active_record/connection_adapters/clickhouse/schema_dumper.rb
+    # The TestCase reopen ports upstream helper methods verbatim, one per seam.
+    - spec/rails_compat/support/cases/helper.rb
 
 Metrics/AbcSize:
   Exclude:
