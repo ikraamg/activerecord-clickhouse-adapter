@@ -1,4 +1,14 @@
-# 0.1.0 (unreleased)
+# Unreleased
+
+- Fixed decimal DDL bounds: `precision:` without `scale:` now means scale 0 (the old
+  `Decimal(N, 10)` shape was invalid for N < 10), and `scale:` without `precision:`
+  raises the same `ArgumentError` as Rails' bundled adapters
+- Added `:binary`/`:blob` column types, mapped to `String` (ClickHouse strings are
+  arbitrary byte sequences)
+- Fixed attribute-less creates: Rails' `INSERT INTO t DEFAULT VALUES` is not ClickHouse
+  syntax; the adapter now emits `FORMAT JSONEachRow {}` (one row, all table defaults)
+
+# 0.1.0 (2026-07-15)
 
 First release. Highlights:
 
