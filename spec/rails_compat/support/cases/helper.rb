@@ -14,6 +14,7 @@ require "active_support/testing/method_call_assertions"
 require "active_support/core_ext/kernel/singleton_class"
 # CopyMigrationsTest silences $stdout through this testing mixin.
 require "active_support/testing/stream"
+require "net/http"
 require "yaml"
 
 module ARCompat
@@ -52,10 +53,26 @@ module ARCompat
     port: Integer(ENV.fetch("CLICKHOUSE_HTTP_PORT", 18_123)),
     username: ENV.fetch("CLICKHOUSE_USER", "rails"),
     password: ENV.fetch("CLICKHOUSE_PASSWORD", "rails"),
-    database: ENV.fetch("CLICKHOUSE_DATABASE", "ar_clickhouse_test"),
+    # Not ar_clickhouse_test: the embedding rspec process owns that namespace, and the
+    # TRMNL corpus spec drops/recreates table names the schema slice also uses
+    # (events/logs/jobs/...) — the presumed mechanism of the recurring full-gate storm.
+    database: ENV.fetch("CLICKHOUSE_COMPAT_DATABASE", "ar_clickhouse_compat"),
     mutations_sync: 1
   }.freeze
+
+  # ClickHouse refuses connections whose default database doesn't exist yet, so the
+  # harness bootstraps its own database over raw HTTP before Active Record connects.
+  def self.create_database
+    uri = URI("http://#{CONNECTION_CONFIG[:host]}:#{CONNECTION_CONFIG[:port]}/")
+    request = Net::HTTP::Post.new(uri)
+    request.basic_auth(CONNECTION_CONFIG[:username], CONNECTION_CONFIG[:password])
+    request.body = "CREATE DATABASE IF NOT EXISTS #{CONNECTION_CONFIG[:database]}"
+    response = Net::HTTP.start(uri.hostname, uri.port) { |http| http.request(request) }
+    raise "harness database bootstrap failed: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
+  end
 end
+
+ARCompat.create_database
 
 # Upstream test/support/connection.rb runs every suite with the global async query
 # executor enabled; async-flavored tests assert payload[:async] on real thread-pool loads.
