@@ -201,7 +201,12 @@ module ActiveRecord
     # remaining schema-slice tables get truncated after it (PLAN.md §5 #15).
     self.use_transactional_tests = false
 
-    setup do
+    # Manifest skips fire after the class's own setup, matching upstream's inline-skip
+    # semantics: Minitest runs teardown even for skipped tests, and vendored teardowns
+    # restore globals from ivars their setup captured — skipping before setup would
+    # write those globals back as nil (seen live: yaml_column_permitted_classes).
+    def after_setup
+      super
       reason = ARCompat::SKIPS.dig(self.class.name, name)
       skip(reason) if reason
     end

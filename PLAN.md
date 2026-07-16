@@ -588,6 +588,16 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     with every column at its table default, so `empty_insert_statement_value`
     returns that — probed live, works with and without a primary key.
 
+57. **Manifest skips fire after class setup, not before** *(Iteration 30)*:
+    Minitest runs teardown even for skipped tests, and vendored teardowns
+    restore process-global config from ivars their setup captured
+    (`SerializedAttributeTestWithYamlSafeLoad` writes
+    `ActiveRecord.yaml_column_permitted_classes` back from
+    `@yaml_column_permitted_classes_default`). The harness's skip hook used to
+    run *before* setup, so a skipped test's teardown nil'd the global and
+    poisoned every later YAML-serialization test in the process. The hook now
+    lives in `after_setup`, matching upstream's inline-skip semantics exactly.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
