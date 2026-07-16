@@ -138,6 +138,7 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | ClickHouse 25.3 (the LTS before 25.8) fails 5 authored specs — both JSON-over-the-wire row_binary cases, `lag` window sugar, the type-family census, and the batching EXPLAIN prune check — so 25.8 is the hard support floor, not a soft default | Iteration 22b probe (25.3.14) |
 | ALTER UPDATE type-checks the mutation expression before matching rows: `UPDATE t SET fk = NULL WHERE ...` on a non-Nullable column raises CANNOT_CONVERT_TYPE (code 70) even when zero rows match — row stores no-op instead | Iteration 26 live (25.8.28) |
 | The circular-join AMBIGUOUS_IDENTIFIER (base table reappearing under an alias, code 207) holds on 26.6 and under the legacy analyzer (`enable_analyzer=0`) alike — not a new-analyzer quirk, a dialect rule | Iteration 26 probe (25.8.28 + 26.6.1) |
+| `Decimal(P, S)` requires `S <= P`: `Decimal(2, 10)` raises ARGUMENT_OUT_OF_BOUND (code 69) at CREATE time; `Decimal(P)` with one argument means scale 0 | Iteration 28 probe (25.8.28) |
 
 Local corpora:
 
@@ -562,7 +563,21 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     untouched — the rewrite lives in the harness helper (same family as the
     inline-DDL rule, #14), pinning the portable form to exactly what the Arel
     visitor emits for unscoped relation deletes. Replaced two manifest skips
-    with passing tests.
+    with passing tests. *(Iteration 28)*: the hook moved from
+    execute/exec_delete to the adapter's own `execute_wire_query` — Rails main
+    routes `connection.delete(sql)` through `QueryIntent#execute!`, which skips
+    both public methods, but every version still funnels through the wire
+    method we implement.
+
+55. **Decimal DDL: bare precision means scale 0; bare scale raises**
+    *(Iteration 28)*: `t.decimal :n, precision: 2` previously rendered
+    `Decimal(2, 10)` from the independent 38/10 fallbacks, which ClickHouse
+    rejects (ARGUMENT_OUT_OF_BOUND: scale may not exceed precision). Now
+    precision-only follows the SQL convention of scale 0, scale-only raises
+    the same ArgumentError as Rails' bundled adapters, and only the fully
+    unbounded column keeps the wide `Decimal(38, 10)` default. `:binary` and
+    `:blob` also map to `String` now — ClickHouse strings are arbitrary byte
+    sequences, so this is the honest widest mapping.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -931,6 +946,19 @@ in the process. 36 skips, every one an already-established seam: real-rollback
 dependence (16), BEGIN/COMMIT query tallies (11), anonymous in-test models
 needing a server-reported pk (6), and the composite-key prefetch seam (3).
 Harness: 2,973 runs / 242 skips.
+
+**Phase 6 (cont.) — migration_test corpus.** *(landed — Iteration 28)* Vendored
+the big top-level `migration_test.rb` (63 runs in its seven classes on this
+adapter — the classes guarded by `supports_bulk_alter?`/`supports_ddl_transactions?`/
+`supports_advisory_locks?`/adapter checks self-exclude) plus the whole
+`test/migrations/` fixture tree that `MIGRATIONS_ROOT` anchors (valid, rename,
+decimal, to_copy*, and friends — the migrator/copier's raw material). Zero new
+skips: the corpus exposed two real DDL gaps, both fixed in the adapter with
+authored specs first (ledger #55 — decimal precision/scale rules, binary/blob
+mapping). The bare-DELETE rule moved to `execute_wire_query` for Rails-main
+compatibility (ledger #54), and two `skips_edge.yml` entries cover main's new
+`migration_strategy` pool method that the pinned test's connection stub lacks.
+Harness: 3,036 runs / 242 skips.
 
 ## 7. Spec strategy (three tiers)
 

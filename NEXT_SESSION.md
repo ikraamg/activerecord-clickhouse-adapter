@@ -1,39 +1,49 @@
-# Iteration 28: migration_test.rb or the core cutover PR
+# Iteration 29: nested_attributes corpus, core cutover PR, or release housekeeping
 
-> Status at handoff: Iteration 27 landed the autosave corpus
-> (`autosave_association_test.rb`, 217 runs in its classes) with ten missing
-> models, their slice tables, and the orders/prisoners tables. New harness
-> translation rule (ledger #54): bare `DELETE FROM t` in upstream test code is
-> pinned to `WHERE 1` by the harness helper — the adapter still passes raw SQL
-> through untouched — which also un-skipped two habtm tests (ratchet shrank).
-> All 36 new skips reuse established seams: rollback dependence, BEGIN/COMMIT
-> query tallies, anonymous-model pk, composite prefetch. Harness: 2,973 runs /
-> 242 skips. Gem suite 524 green, rubocop zero, CI green on the scoping push.
+> Status at handoff: Iteration 28 landed the top-level `migration_test.rb`
+> corpus (63 runs on this adapter — bulk-alter/ddl-transaction/advisory-lock
+> classes self-exclude) plus the vendored `test/migrations/` fixture tree that
+> `MIGRATIONS_ROOT` anchors. Zero new skips: the corpus exposed two real DDL
+> gaps, fixed adapter-side with authored specs first (ledger #55 — bare
+> `precision:` now means scale 0 instead of the invalid `Decimal(2, 10)`,
+> bare `scale:` raises Rails' ArgumentError, `:binary`/`:blob` map to String).
+> The bare-DELETE harness rule moved to `execute_wire_query` because Rails
+> main's QueryIntent skips execute/exec_delete (ledger #54 updated); two
+> `skips_edge.yml` entries cover main's new `migration_strategy` pool method.
+> Harness: 3,036 runs / 242 skips, green on release and edge. Gem suite 529
+> green, rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
-1. **Next corpus:** `migration_test.rb` itself (the big top-level file — the
-   sub-suites are done), or `nested_attributes_test` as a natural follow-on
-   to autosave.
+1. **Next corpus:** `nested_attributes_test` (natural follow-on to autosave —
+   same model family, mostly already vendored), or `persistence_test`-adjacent
+   suites still unvendored.
 2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
 3. **Release housekeeping:** CHANGELOG still says "0.1.0 (unreleased)" though
-   the gem is on rubygems.org — date it, and optionally cut a GitHub release
-   from the existing v0.1.0 tag.
+   the gem is on rubygems.org — date it, note the Iteration 28 decimal/binary
+   DDL fixes for 0.1.1, and optionally cut a GitHub release from the v0.1.0 tag.
 
 ## Watch out for (carried forward)
 
-- One full-harness run (seed 63425, pre-fix tree) showed 110 cross-suite
-  failures that vanished on the identical re-run — fixture-state flake, not
-  reproduced since. If a full run fails wholesale, re-run the same seed before
-  debugging; if it ever reproduces, suspect the teardown TRUNCATE loop racing
-  fixture reload.
+- Full-run flake, now seen twice (seed 63425 pre-fix, and one Iteration 28 gate
+  run): a wholesale failure storm that vanishes on the identical re-run. The
+  Iteration 28 case lost the harness's `jobs` table mid-run plus an ECONNRESET
+  burst — the parent gem suite and the harness subprocess share
+  `ar_clickhouse_test`, and five table names (events/logs/jobs/requests/
+  deploys) exist in both the TRMNL corpus spec and the harness slice. Re-run
+  before debugging; if it ever reproduces deterministically, consider giving
+  the harness subprocess its own database.
 - The tmpfs container fills up after several consecutive full-harness runs
   (NOT_ENOUGH_SPACE, code 243, from fixture-part churn). `docker compose down
   && docker compose up -d --wait` is the factory reset; do it before blaming
-  the adapter.
+  the adapter. After the reset, give the port proxy a beat (a run started the
+  instant `--wait` returns has ECONNRESET'd every query once).
+- `t.decimal precision: N` now emits `Decimal(N, 0)`; only a fully unbounded
+  decimal keeps `Decimal(38, 10)`. Consumer schema diffs of `Decimal(N, 10)` →
+  `Decimal(N, 0)` are this fix (the old shape was invalid for N < 10 anyway).
 - `t.datetime` now defaults to precision 6. Any consumer schema diff noise of
   `DateTime64(3)` → `DateTime64(6)` is this, not a bug; explicit `precision: 3`
   restores the old shape.
@@ -90,4 +100,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 29.
+read/write path was touched, this file rewritten for Iteration 30.

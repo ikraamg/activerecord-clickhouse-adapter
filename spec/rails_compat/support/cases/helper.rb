@@ -12,6 +12,8 @@ require "active_support/testing/method_call_assertions"
 # Upstream suites call bare class_eval inside test bodies; Kernel#class_eval comes
 # from this core_ext, which the full Rails test env loads transitively.
 require "active_support/core_ext/kernel/singleton_class"
+# CopyMigrationsTest silences $stdout through this testing mixin.
+require "active_support/testing/stream"
 require "yaml"
 
 module ARCompat
@@ -112,6 +114,10 @@ ActiveRecord.belongs_to_required_validates_foreign_key = false
 # Quote "type" if it's a reserved word for the current connection (upstream helper.rb).
 QUOTED_TYPE = ActiveRecord::Base.lease_connection.quote_column_name("type")
 
+# Upstream test/config.rb anchors this at test/migrations; the vendored copy lives
+# beside the vendored cases.
+MIGRATIONS_ROOT = File.expand_path("../../vendor/migrations", __dir__)
+
 # Upstream defines this in test/cases/helper.rb; async query tests include it to
 # drain the pool's async executor before asserting.
 module WaitForAsyncTestHelper
@@ -140,6 +146,16 @@ module ARCompat
 
     def in_memory_db?
       false
+    end
+
+    # MySQL-only concern (upstream support/adapter_helper.rb); never applies here.
+    def mysql_enforcing_gtid_consistency?
+      false
+    end
+
+    # String columns take DEFAULT expressions like every other ClickHouse type.
+    def supports_text_column_with_default?
+      true
     end
 
     # Upstream delegates these capability predicates to the live connection so the

@@ -13,3 +13,8 @@ ActiveRecord::Migration::ColumnsTest:
     Rails main removed Column#fetch_cast_type (now cast_type), which the pinned test calls
 ActiveRecord::Migration::ChangeSchemaTest:
   test_create_table_with_defaults: *fetch_cast_type_removed
+MigrationTest:
+  test_method_missing_delegates_to_connection: &migration_strategy_added >-
+    Rails main's Migration#execution_strategy asks the pool for migration_strategy,
+    which the pinned test's hand-rolled connection stub doesn't define
+  test_respond_to_for_migration_method: *migration_strategy_added
