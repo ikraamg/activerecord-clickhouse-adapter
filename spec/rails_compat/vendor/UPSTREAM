@@ -26,7 +26,9 @@ Vendored from rails/rails tag v8.1.3 (activerecord/test/), byte-exact:
 - cases/dirty_test.rb
 - cases/timestamp_test.rb
 - cases/attribute_methods_test.rb
-- support/fake_adapter.rb, support/ddl_helper.rb
+- cases/defaults_test.rb
+- cases/reflection_test.rb
+- support/fake_adapter.rb, support/ddl_helper.rb, support/schema_dumping_helper.rb
 - migrations/* (the fixture migration tree MIGRATIONS_ROOT points at)
 - cases/validations_repair_helper.rb
 - models/* (every model the vendored cases require, incl. models/dats/*,

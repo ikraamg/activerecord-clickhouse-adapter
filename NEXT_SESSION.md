@@ -1,15 +1,17 @@
-# Iteration 32: core cutover PR, 0.1.1, or the next corpus
+# Iteration 33: core cutover PR, 0.1.1, or the next corpus
 
-> Status at handoff: Iterations 30–31 landed five corpora. 30: serialized
-> attribute + enum (203 runs; traffic_light model; harness skip-hook bug fixed,
-> ledger #57 — manifest skips now fire in `after_setup`). 31: dirty +
-> timestamp + attribute_methods (234 runs; five models, five slice tables,
-> `fake` adapter registration, `InTimeZone`/`DdlHelper`/
-> `with_temporary_connection_pool` helper ports). No adapter gaps in either.
-> New seams: `no_last_insert_id` (raw insert can't report a row id) and
-> `key_column_update` (partial_writes off updates the sorting key, code 420 —
-> ledger #58). Harness: 3,642 runs / 295 skips. Gem suite 530 green, rubocop
-> zero.
+> Status at handoff: Iteration 32 landed the defaults + reflection corpora
+> (243 runs; five models — hotel, recipe, hardback, user_with_invalid_relation,
+> company_in_module; three slice tables; `SchemaDumpingHelper` port; one skip
+> reusing the string-limit seam) plus two structural harness fixes. Ledger #59:
+> suite-level `"*"` overlay entries retire a vendored class whose own
+> setup/teardown breaks on that Rails version (Rails main froze
+> `attribute_method_patterns`; the pinned attribute_methods teardown mutates it
+> in place, erroring all 117 tests). Ledger #60: the harness subprocess now
+> bootstraps and owns `ar_clickhouse_compat` (override:
+> `CLICKHOUSE_COMPAT_DATABASE`), ending the shared-namespace full-gate storm.
+> Harness: 3,724 runs / 296 skips. Gem suite 530 green, rubocop zero, CI green
+> on all six jobs.
 
 ## Scope
 
@@ -17,28 +19,21 @@ Pick one (value order):
 
 1. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-2. **Next corpus:** remaining unvendored suites worth mining —
-   `calculations_test` siblings, `date_time_precision_test`, `time_precision_test`,
-   `defaults_test`, or `reflection_test`.
-3. **0.1.1 release:** the Unreleased CHANGELOG section already holds the
+2. **0.1.1 release:** the Unreleased CHANGELOG section already holds the
    decimal-DDL, binary/blob, and empty-insert fixes; cut it when Ikraam wants
    consumers to pick those up.
+3. **Next corpus:** remaining unvendored suites worth mining —
+   `calculations_test` siblings, `date_time_precision_test`,
+   `time_precision_test`, `column_definition_test`, or `quoting_test`.
 
 ## Watch out for (carried forward)
 
-- Full-gate flake, three sightings now (seeds 63425, 11977, 36176): a wholesale
-  failure storm inside the embedded harness that vanishes on the identical
-  re-run (36176 replayed green). Twice the harness's `jobs` table went missing
-  mid-run with an ECONNRESET burst alongside. Standalone harness runs have
-  never reproduced it. The parent suite and harness subprocess share
-  `ar_clickhouse_test`, and the TRMNL corpus spec drops/recreates five table
-  names the slice also owns (events/logs/jobs/requests/deploys) — sequential
-  in-process, so the mechanism is still unproven. Policy: re-run the same seed
-  before debugging; if it ever reproduces deterministically, give the harness
-  subprocess its own database (cheap, kills the shared-namespace hazard).
-- Manifest skips now fire in `after_setup` (ledger #57). If a vendored class's
-  *setup itself* breaks on this adapter, an `after_setup` skip is too late —
-  that case needs a class-level exclusion instead; none exist yet.
+- The full-gate storm is believed fixed by ledger #60 (harness owns
+  `ar_clickhouse_compat`). If a wholesale embedded-harness failure ever
+  reappears, it is a new bug, not the old flake — diagnose, don't re-run.
+- Manifest skips fire in `after_setup` (ledger #57); a class whose *own
+  setup/teardown* breaks needs a suite-level `"*"` overlay entry instead
+  (ledger #59 — one exists: AttributeMethodsTest in skips_edge.yml).
 - The tmpfs container fills up after several consecutive full-harness runs
   (NOT_ENOUGH_SPACE, code 243). `docker compose down && docker compose up -d
   --wait` is the factory reset. After the reset, give the port proxy ~10s —
@@ -102,4 +97,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 33.
+read/write path was touched, this file rewritten for Iteration 34.

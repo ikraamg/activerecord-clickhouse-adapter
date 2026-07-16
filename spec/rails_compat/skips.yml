@@ -496,3 +496,7 @@ AttributeMethodsTest:
   "test_#id_value_alias_returns_id_column_only_for_composite_primary_key_models": *composite_prefetch
   "test_aliasing_`id`_attribute_allows_reading_the_column_value_for_a_CPK_model": *composite_prefetch
   test_attribute_names_on_a_queried_record: *anonymous_model_primary_key
+
+# reflection corpus (Iteration 32). Reuses the string-limit seam.
+ReflectionTest:
+  test_column_string_type_and_limit: *string_limit

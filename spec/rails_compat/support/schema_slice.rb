@@ -49,7 +49,7 @@ module ARCompat
       developers_projects
       dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays
       eyes faces families
-      family_trees funny_jokes guitars having humans
+      family_trees funny_jokes guitars hardbacks having hotels humans
       images interests iris
       invoices jobs jobs_pool keyboards kitchens lessons lessons_students line_items lions liquid
       magazines mateys
@@ -57,7 +57,7 @@ module ARCompat
       minimalistics minivans molecules nodes non_primary_keys
       numeric_data orders organizations owners parrots parrots_pirates parrots_treasures people
       peoples_treasures pets pets_treasures pirates price_estimates prisoners professors
-      program_offerings programs
+      program_offerings programs recipes
       post_comments_counts posts projects ratings readers records references rooms
       sections seminars sessions
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
@@ -698,6 +698,14 @@ module ARCompat
         t.integer :user_id, limit: 8
       end
 
+      connection.create_table :hardbacks, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+      end
+
+      connection.create_table :hotels, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+      end
+
       connection.create_table :keyboards, force: true, order: "key_number" do |t|
         t.integer :key_number, limit: 8
         t.string :name, null: true
@@ -1164,6 +1172,12 @@ module ARCompat
         t.integer :id, limit: 8
         t.string :name, null: true
         t.integer :taggings_count, null: true, default: 0
+      end
+
+      connection.create_table :recipes, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :chef_id, limit: 8, null: true
+        t.integer :hotel_id, limit: 8, null: true
       end
 
       connection.create_table :tasks, force: true, order: "id" do |t|

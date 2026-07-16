@@ -606,6 +606,25 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     `key_column_update` seam rather than the adapter special-casing the
     column list.
 
+59. **Skip overlays can retire whole vendored classes** *(Iteration 32)*: Rails
+    main froze `attribute_method_patterns` (ractor safety), and the pinned
+    8.1.3 `attribute_methods_test.rb` teardown mutates it in place
+    (clear/concat) — erroring all 117 tests in the class before any per-test
+    skip can help, because Minitest runs teardown even for skipped tests. A
+    suite-level `"*"` entry in an overlay now empties the class's
+    `runnable_methods`, retiring it on that Rails version only. The mechanism
+    is overlay-agnostic but should stay a last resort: per-test skips keep the
+    rest of a class honest.
+
+60. **The harness owns its own database** *(Iteration 32)*: the embedded
+    harness subprocess and the parent rspec suite used to share
+    `ar_clickhouse_test`, and the TRMNL corpus spec drops/recreates five table
+    names the schema slice also owns (events/logs/jobs/requests/deploys). The
+    full-gate storm (four sightings, never reproducible standalone) stopped
+    being worth diagnosing per-seed: the harness now bootstraps and connects to
+    `ar_clickhouse_compat` (override: `CLICKHOUSE_COMPAT_DATABASE`), killing
+    the shared-namespace hazard outright.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -1021,6 +1040,21 @@ column including the sorting key, which ClickHouse mutations refuse, code
 420), three `no_time_type` (bonus_time rides the DateTime64 TIME stand-in),
 two composite-prefetch, and the rest the anonymous-model pk seam (both suites
 lean heavily on in-test `Class.new` models). Harness: 3,642 runs / 295 skips.
+
+**Phase 6 (cont.) — defaults + reflection corpora, harness isolation.**
+*(landed — Iteration 32)* Vendored `defaults_test.rb` (the adapter-guarded
+classes self-exclude; DefaultNumbers/Strings/Text run in full — column
+defaults round-trip untouched) and `reflection_test.rb` (the association
+metadata surface) with five missing models (hotel, recipe, hardback,
+user_with_invalid_relation, company_in_module), three slice tables (hotels,
+recipes, hardbacks), and the `SchemaDumpingHelper` port. No adapter gaps; one
+manifest skip reusing the string-limit seam. Two structural harness fixes:
+suite-level `"*"` overlay entries retire a class whose own setup/teardown
+breaks on that Rails version (ledger #59 — Rails main froze
+`attribute_method_patterns`, erroring all 117 pinned attribute_methods tests),
+and the harness subprocess now runs in its own `ar_clickhouse_compat` database
+(ledger #60 — ends the shared-namespace full-gate storm for good).
+Harness: 3,724 runs / 296 skips.
 
 ## 7. Spec strategy (three tiers)
 
