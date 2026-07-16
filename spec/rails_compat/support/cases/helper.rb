@@ -92,12 +92,10 @@ module ARCompat
   module BareDeleteTranslation
     BARE_DELETE = /\A\s*delete\s+from\s+(?:`[^`]+`|\S+)\s*\z/i
 
-    def execute(sql, ...)
-      sql = "#{sql} WHERE 1" if sql.match?(BARE_DELETE)
-      super
-    end
-
-    def exec_delete(sql, ...)
+    # Hooked at the adapter's own wire funnel rather than execute/exec_delete: Rails
+    # main routes connection.delete(sql) through QueryIntent#execute!, which skips
+    # both public methods, but every version still lands here.
+    def execute_wire_query(raw_connection, sql, ...)
       sql = "#{sql} WHERE 1" if sql.match?(BARE_DELETE)
       super
     end
