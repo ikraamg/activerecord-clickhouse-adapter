@@ -59,6 +59,29 @@ RSpec.describe "ClickHouse CRUD semantics" do
         .to raise_error(ArgumentError, /does not support/)
     end
 
+    # Rails renders an attribute-less create as INSERT INTO t DEFAULT VALUES, which
+    # ClickHouse doesn't parse; the adapter substitutes an empty JSONEachRow row so
+    # every column takes its table default.
+    it "creates an all-defaults row when no attributes are set" do
+      connection = ActiveRecord::Base.lease_connection
+      connection.create_table("defaults_probe", force: true, order: "tuple()") do |t|
+        t.string :status, default: "fresh"
+      end
+      pkless = Class.new(ActiveRecord::Base) do
+        self.table_name = "defaults_probe"
+        self.primary_key = nil
+        # Under partial inserts (Rails' own test config) an attribute-less create
+        # has zero values, which is what triggers the empty-insert SQL shape.
+        self.partial_inserts = true
+
+        def self.name = "DefaultsProbe"
+      end
+      pkless.new.save!(validate: false)
+      expect(pkless.pick(:status)).to eq("fresh")
+    ensure
+      ActiveRecord::Base.lease_connection.drop_table("defaults_probe", if_exists: true)
+    end
+
     # Rails stamps record_timestamps rows with connection.high_precision_current_timestamp;
     # the default CURRENT_TIMESTAMP literal is not a ClickHouse identifier.
     it "stamps timestamp columns via record_timestamps" do

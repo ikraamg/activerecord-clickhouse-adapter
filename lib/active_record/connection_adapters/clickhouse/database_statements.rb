@@ -139,6 +139,13 @@ module ActiveRecord
           HIGH_PRECISION_CURRENT_TIMESTAMP
         end
 
+        # Rails renders an attribute-less create as "INSERT INTO t DEFAULT VALUES",
+        # which ClickHouse doesn't parse. An empty JSONEachRow row is the equivalent:
+        # one row, every column at its table default (probed live, PLAN.md §2).
+        def empty_insert_statement_value(_primary_key = nil)
+          "FORMAT JSONEachRow {}"
+        end
+
         # Rails nests a SavepointTransaction inside any dirty transaction (e.g. the
         # retry in create_or_find_by) even though supports_savepoints? is false. Like
         # begin/commit/rollback (PLAN.md §5 decision 4), the savepoint verbs are honest
