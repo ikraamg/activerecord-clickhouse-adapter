@@ -35,6 +35,17 @@ module ARCompat
     end
   end
 
+  # A suite-level "*" entry retires an entire vendored class. Per-test skips can't
+  # cover a class whose own setup/teardown breaks on that Rails version — Minitest
+  # runs teardown even for skipped tests. Called from run.rb once the cases are loaded.
+  def self.apply_suite_exclusions
+    SKIPS.each do |suite, tests|
+      next unless tests.is_a?(Hash) && tests["*"]
+
+      Object.const_get(suite).define_singleton_method(:runnable_methods) { [] }
+    end
+  end
+
   CONNECTION_CONFIG = {
     adapter: "clickhouse",
     host: ENV.fetch("CLICKHOUSE_HOST", "localhost"),
