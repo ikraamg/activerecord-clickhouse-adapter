@@ -409,3 +409,17 @@ TestAutosaveAssociationOnAHasAndBelongsToManyAssociationWithAcceptsNestedAttribu
 TestAutosaveAssociationValidationsOnAHasManyAssociation:
   "test_rollbacks_whole_transaction_when_associations_fail_to_#save_due_to_uniqueness_validation_failure": *uniqueness_rollback
   "test_rollbacks_whole_transaction_and_raises_ActiveRecord::RecordInvalid_when_associations_fail_to_#save!_due_to_uniqueness_validation_failure": *uniqueness_rollback
+
+# nested_attributes corpus (Iteration 29). All five reuse established seams.
+TestNestedAttributesInGeneral:
+  test_updating_models_with_cpk_provided_as_strings: *query_count_tally
+
+TestHasManyAutosaveAssociationWhichItselfHasAutosaveAssociations:
+  test_circular_references_do_not_perform_unnecessary_queries: *query_count_tally
+
+TestIndexErrorsWithNestedAttributesOnlyMode:
+  test_index_in_nested_attributes_order_order: *anonymous_model_primary_key
+  test_index_unaffected_by_reject_if: *anonymous_model_primary_key
+
+TestNestedAttributesWithExtend:
+  test_extend_affects_nested_attributes: *anonymous_model_primary_key

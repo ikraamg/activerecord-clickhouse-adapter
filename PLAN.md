@@ -139,6 +139,7 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | ALTER UPDATE type-checks the mutation expression before matching rows: `UPDATE t SET fk = NULL WHERE ...` on a non-Nullable column raises CANNOT_CONVERT_TYPE (code 70) even when zero rows match — row stores no-op instead | Iteration 26 live (25.8.28) |
 | The circular-join AMBIGUOUS_IDENTIFIER (base table reappearing under an alias, code 207) holds on 26.6 and under the legacy analyzer (`enable_analyzer=0`) alike — not a new-analyzer quirk, a dialect rule | Iteration 26 probe (25.8.28 + 26.6.1) |
 | `Decimal(P, S)` requires `S <= P`: `Decimal(2, 10)` raises ARGUMENT_OUT_OF_BOUND (code 69) at CREATE time; `Decimal(P)` with one argument means scale 0 | Iteration 28 probe (25.8.28) |
+| `INSERT INTO t VALUES ()` is a syntax error, but `INSERT INTO t FORMAT JSONEachRow {}` inserts one all-defaults row — the ClickHouse spelling of SQL's `DEFAULT VALUES`, and it needs no column name | Iteration 29 probe (25.8.28) |
 
 Local corpora:
 
@@ -579,6 +580,14 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     `:blob` also map to `String` now — ClickHouse strings are arbitrary byte
     sequences, so this is the honest widest mapping.
 
+56. **Empty inserts render as `FORMAT JSONEachRow {}`** *(Iteration 29)*: Rails
+    turns an attribute-less create into `INSERT INTO t DEFAULT VALUES`, which
+    ClickHouse doesn't parse and which has no direct equivalent (`VALUES ()`
+    is a syntax error, `(col) VALUES (DEFAULT)` needs a column name the seam
+    doesn't always have). An empty JSONEachRow row inserts exactly one row
+    with every column at its table default, so `empty_insert_statement_value`
+    returns that — probed live, works with and without a primary key.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -959,6 +968,15 @@ mapping). The bare-DELETE rule moved to `execute_wire_query` for Rails-main
 compatibility (ledger #54), and two `skips_edge.yml` entries cover main's new
 `migration_strategy` pool method that the pinned test's connection stub lacks.
 Harness: 3,036 runs / 242 skips.
+
+**Phase 6 (cont.) — nested_attributes corpus.** *(landed — Iteration 29)*
+Vendored `nested_attributes_test.rb` (194 runs in its sixteen classes) with the
+two missing models (entry, message — the delegated-type pair) and their slice
+tables. The corpus caught one real adapter gap, fixed with an authored spec
+first: attribute-less creates rendered Rails' `DEFAULT VALUES`, now
+`FORMAT JSONEachRow {}` (ledger #56). Five skips, all established seams: two
+BEGIN/COMMIT query tallies, three anonymous in-test models needing a
+client-side pk. Harness: 3,203 runs / 247 skips.
 
 ## 7. Spec strategy (three tiers)
 

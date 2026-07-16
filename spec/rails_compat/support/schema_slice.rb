@@ -47,13 +47,13 @@ module ARCompat
       cpk_reviews cpk_tags customer_carriers customers
       dashboards departments developers
       developers_projects
-      dog_lovers dogs drink_designers edges electrons engines enrollments entrants essays
+      dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays
       eyes faces families
       family_trees funny_jokes guitars having humans
       images interests iris
       invoices jobs jobs_pool kitchens lessons lessons_students line_items lions liquid
       magazines mateys
-      member_details member_types members memberships mentors mice
+      member_details member_types members memberships mentors messages mice
       minimalistics minivans molecules nodes non_primary_keys
       numeric_data orders organizations owners parrots parrots_pirates parrots_treasures people
       peoples_treasures pets pets_treasures pirates price_estimates prisoners professors
@@ -570,6 +570,14 @@ module ARCompat
         t.string :super_human_type, null: true
       end
 
+      connection.create_table :entries, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :entryable_type
+        t.integer :entryable_id, limit: 8
+        t.integer :account_id, limit: 8
+        t.datetime :updated_at, null: true
+      end
+
       connection.create_table :entrants, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name
@@ -745,6 +753,12 @@ module ARCompat
 
       connection.create_table :magazines, force: true, order: "id" do |t|
         t.integer :id, limit: 8
+      end
+
+      connection.create_table :messages, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :subject, null: true
+        t.datetime :updated_at, null: true
       end
 
       connection.create_table :mice, force: true, order: "id" do |t|

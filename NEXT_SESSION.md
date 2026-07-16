@@ -1,46 +1,46 @@
-# Iteration 29: nested_attributes corpus, core cutover PR, or release housekeeping
+# Iteration 30: core cutover PR, release housekeeping, or the next corpus
 
-> Status at handoff: Iteration 28 landed the top-level `migration_test.rb`
-> corpus (63 runs on this adapter — bulk-alter/ddl-transaction/advisory-lock
-> classes self-exclude) plus the vendored `test/migrations/` fixture tree that
-> `MIGRATIONS_ROOT` anchors. Zero new skips: the corpus exposed two real DDL
-> gaps, fixed adapter-side with authored specs first (ledger #55 — bare
-> `precision:` now means scale 0 instead of the invalid `Decimal(2, 10)`,
-> bare `scale:` raises Rails' ArgumentError, `:binary`/`:blob` map to String).
-> The bare-DELETE harness rule moved to `execute_wire_query` because Rails
-> main's QueryIntent skips execute/exec_delete (ledger #54 updated); two
-> `skips_edge.yml` entries cover main's new `migration_strategy` pool method.
-> Harness: 3,036 runs / 242 skips, green on release and edge. Gem suite 529
-> green, rubocop zero.
+> Status at handoff: Iteration 29 landed the nested_attributes corpus
+> (`nested_attributes_test.rb`, 194 runs) with the entry/message delegated-type
+> models and slice tables. One real adapter gap fixed TDD-style (ledger #56):
+> attribute-less creates rendered `INSERT INTO t DEFAULT VALUES`, which
+> ClickHouse can't parse — the adapter now emits `FORMAT JSONEachRow {}`, the
+> probed equivalent (one row, all table defaults, no column name needed). Five
+> new skips, all established seams (query tallies, anonymous-model pk).
+> Harness: 3,203 runs / 247 skips. Gem suite 530 green, rubocop zero. CI green
+> across the matrix on the Iteration 28 push (including the previously-red
+> AR-edge job).
 
 ## Scope
 
 Pick one (value order):
 
-1. **Next corpus:** `nested_attributes_test` (natural follow-on to autosave —
-   same model family, mostly already vendored), or `persistence_test`-adjacent
-   suites still unvendored.
-2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
+1. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-3. **Release housekeeping:** CHANGELOG still says "0.1.0 (unreleased)" though
-   the gem is on rubygems.org — date it, note the Iteration 28 decimal/binary
-   DDL fixes for 0.1.1, and optionally cut a GitHub release from the v0.1.0 tag.
+2. **Release housekeeping:** CHANGELOG still says "0.1.0 (unreleased)" though
+   the gem is on rubygems.org — date it, note the Iteration 28/29 DDL and
+   empty-insert fixes for 0.1.1, and optionally cut a GitHub release from the
+   v0.1.0 tag.
+3. **Next corpus:** remaining unvendored suites worth mining —
+   `persistence_test` siblings (`update_all`/`delete_all` variants),
+   `serialized_attribute_test`, or `enum_test`.
 
 ## Watch out for (carried forward)
 
-- Full-run flake, now seen twice (seed 63425 pre-fix, and one Iteration 28 gate
-  run): a wholesale failure storm that vanishes on the identical re-run. The
-  Iteration 28 case lost the harness's `jobs` table mid-run plus an ECONNRESET
-  burst — the parent gem suite and the harness subprocess share
-  `ar_clickhouse_test`, and five table names (events/logs/jobs/requests/
-  deploys) exist in both the TRMNL corpus spec and the harness slice. Re-run
-  before debugging; if it ever reproduces deterministically, consider giving
-  the harness subprocess its own database.
+- Full-gate flake, three sightings now (seeds 63425, 11977, 36176): a wholesale
+  failure storm inside the embedded harness that vanishes on the identical
+  re-run (36176 replayed green). Twice the harness's `jobs` table went missing
+  mid-run with an ECONNRESET burst alongside. Standalone harness runs have
+  never reproduced it. The parent suite and harness subprocess share
+  `ar_clickhouse_test`, and the TRMNL corpus spec drops/recreates five table
+  names the slice also owns (events/logs/jobs/requests/deploys) — sequential
+  in-process, so the mechanism is still unproven. Policy: re-run the same seed
+  before debugging; if it ever reproduces deterministically, give the harness
+  subprocess its own database (cheap, kills the shared-namespace hazard).
 - The tmpfs container fills up after several consecutive full-harness runs
-  (NOT_ENOUGH_SPACE, code 243, from fixture-part churn). `docker compose down
-  && docker compose up -d --wait` is the factory reset; do it before blaming
-  the adapter. After the reset, give the port proxy a beat (a run started the
-  instant `--wait` returns has ECONNRESET'd every query once).
+  (NOT_ENOUGH_SPACE, code 243). `docker compose down && docker compose up -d
+  --wait` is the factory reset. After the reset, give the port proxy ~10s —
+  a run started the instant `--wait` returns has ECONNRESET'd every query once.
 - `t.decimal precision: N` now emits `Decimal(N, 0)`; only a fully unbounded
   decimal keeps `Decimal(38, 10)`. Consumer schema diffs of `Decimal(N, 10)` →
   `Decimal(N, 0)` are this fix (the old shape was invalid for N < 10 anyway).
@@ -100,4 +100,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 30.
+read/write path was touched, this file rewritten for Iteration 31.
