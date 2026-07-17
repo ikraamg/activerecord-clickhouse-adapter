@@ -26,15 +26,8 @@ Dir[File.expand_path("vendor/cases/**/*_test.rb", __dir__)].each { |file| requir
 ARCompat.apply_suite_exclusions
 ARCompat::SchemaSlice.assign_model_primary_keys
 
-# Twice now a run has printed one Minitest header but two "Finished in" summaries —
-# two processes sharing the run's stdout and database (PLAN.md §6, Iteration 34/35).
-# Stamp every summary with its pid and trace any fork so the next sighting names
-# the second process and where it came from.
+# The pid stamp caught the "double-summary flake" red-handed (Iteration 36): two
+# concurrent full gates whose harness subprocesses shared one database and one
+# redirect file. Databases are pid-suffixed now; the stamp stays so any future
+# shared-output collision identifies both writers immediately.
 Minitest.after_run { warn "rails-compat harness summary from pid #{Process.pid}" }
-Process.singleton_class.prepend(Module.new do
-  def _fork
-    warn "rails-compat harness fork from pid #{Process.pid} at:"
-    caller.first(12).each { |line| warn "  #{line}" }
-    super
-  end
-end)

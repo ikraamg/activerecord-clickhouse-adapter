@@ -53,26 +53,38 @@ module ARCompat
     port: Integer(ENV.fetch("CLICKHOUSE_HTTP_PORT", 18_123)),
     username: ENV.fetch("CLICKHOUSE_USER", "rails"),
     password: ENV.fetch("CLICKHOUSE_PASSWORD", "rails"),
-    # Not ar_clickhouse_test: the embedding rspec process owns that namespace, and the
-    # TRMNL corpus spec drops/recreates table names the schema slice also uses
-    # (events/logs/jobs/...) — the presumed mechanism of the recurring full-gate storm.
-    database: ENV.fetch("CLICKHOUSE_COMPAT_DATABASE", "ar_clickhouse_compat"),
+    # Pid-suffixed so concurrent harness runs can never share a namespace. The
+    # "double-summary flake" (PLAN.md §6, Iterations 34–36) was two full gates
+    # running at once: their harness subprocesses shared ar_clickhouse_compat and
+    # truncated each other's fixtures mid-test (traced live in system.query_log —
+    # one process's TRUNCATE sweep interleaved with the other's test queries).
+    database: ENV.fetch("CLICKHOUSE_COMPAT_DATABASE") { "ar_clickhouse_compat_#{Process.pid}" },
     mutations_sync: 1
   }.freeze
 
   # ClickHouse refuses connections whose default database doesn't exist yet, so the
-  # harness bootstraps its own database over raw HTTP before Active Record connects.
+  # harness bootstraps its own database over raw HTTP before Active Record connects,
+  # and drops it at exit (a killed run leaves debris only until the next tmpfs reset).
   def self.create_database
+    server_execute("CREATE DATABASE IF NOT EXISTS #{CONNECTION_CONFIG[:database]}")
+  end
+
+  def self.drop_database
+    server_execute("DROP DATABASE IF EXISTS #{CONNECTION_CONFIG[:database]}")
+  end
+
+  def self.server_execute(sql)
     uri = URI("http://#{CONNECTION_CONFIG[:host]}:#{CONNECTION_CONFIG[:port]}/")
     request = Net::HTTP::Post.new(uri)
     request.basic_auth(CONNECTION_CONFIG[:username], CONNECTION_CONFIG[:password])
-    request.body = "CREATE DATABASE IF NOT EXISTS #{CONNECTION_CONFIG[:database]}"
+    request.body = sql
     response = Net::HTTP.start(uri.hostname, uri.port) { |http| http.request(request) }
     raise "harness database bootstrap failed: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
   end
 end
 
 ARCompat.create_database
+at_exit { ARCompat.drop_database }
 
 # Upstream test/support/connection.rb runs every suite with the global async query
 # executor enabled; async-flavored tests assert payload[:async] on real thread-pool loads.

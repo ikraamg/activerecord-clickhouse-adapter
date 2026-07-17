@@ -1,47 +1,42 @@
-# Iteration 36: core cutover PR, 0.2.0 release, or the next corpus
+# Iteration 37: 0.2.0 readiness sweep, core cutover PR, or the next corpus
 
-> Status at handoff: Iteration 35 landed three corpora. column_definition_test
-> passes untouched (stub-adapter only). inheritance_test (STI, four classes,
-> 73 runs) needs one skip (circular self-join) and autoloads deliberately-
-> broken models through a Zeitwerk loader rooted at the new MODELS_ROOT
-> (zeitwerk is now a dev-only dependency). bind_parameter_test carries eight
-> skips in two groups: no server-side prepared statements over HTTP (no
-> StatementPool to introspect), and no client-side bind limit (the 65k-bind
-> probe trips the server's max_query_size instead). Five slice tables
-> (collections, products, product_types, variants, vegetables). One latent
-> harness bug fixed: run.rb now creates schema_migrations +
-> ar_internal_metadata after the slice, since several MigrationTest tests
-> assume they exist (seed-order dependent before). No adapter changes.
-> Harness: 3,908 runs / 329 skips. Gem suite 533 green, rubocop zero.
+> Status at handoff: Iteration 36 landed the store/secure_token/counter_cache
+> corpora (116 runs, 5 skips — store passes untouched), the runnable
+> `examples/olap_on_rails.rb` tour (guarded by spec/examples, own database),
+> and root-caused the double-summary flake: it was two concurrent full gates
+> sharing ar_clickhouse_compat and one redirect file — a one-driver-rule
+> violation, not a harness bug. The harness database is now pid-suffixed and
+> dropped at_exit, so concurrent runs can no longer trample each other.
+> Harness: 4,024 runs / 334 skips. Gem suite 534 green, rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
-1. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
+1. **0.2.0 readiness sweep:** Ikraam's bar for 0.2.0 is "pretty much drop-in
+   for OLAP, with an example for OLAP-on-Rails". The example now exists. Sweep
+   the remaining drop-in gaps: walk README claims against reality, re-run
+   benchmarks, decide the version bump (datetime default-precision change is
+   breaking-ish), and draft the CHANGELOG. Release only when Ikraam says so.
+2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-2. **Release:** the Unreleased CHANGELOG holds the decimal-DDL, binary/blob,
-   empty-insert, and datetime-precision fixes. The datetime default-precision
-   change (3 → 6) alters generated DDL, so this should probably be 0.2.0, not
-   0.1.1 — decide with Ikraam.
 3. **Next corpus:** remaining unvendored suites worth mining —
-   `attribute_decorators_test`, `store_test`, `secure_token_test`,
-   `counter_cache_test`, or the `adapters/`-shared `connection_test`.
+   `attribute_decorators_test` (gone in 8.1.3 — check for a successor),
+   the `adapters/`-shared `connection_test`, `query_cache_test`,
+   `explain_test` siblings, or `arel/*` units.
 
 ## Watch out for (carried forward)
 
-- **Double-summary flake (Iterations 34–35, twice):** a full-harness run
-  prints a single `Run options` header but *two* `Finished in` summaries in
-  one output, with mass fixture-wipe RecordNotFound failures across
-  previously-green suites — two Minitest processes sharing the run's stdout
-  and database. Both sightings (seeds 32235, 23574) re-ran green on the same
-  seed; a `Process._fork` tracer recorded zero forks on the green rerun.
-  run.rb now permanently stamps each summary with its pid and backtraces any
-  fork — the next sighting will name the second process. A double-summary
-  output is invalid: re-run it, and read the new pid/fork stamps.
-- The full-gate storm is believed fixed by ledger #60 (harness owns
-  `ar_clickhouse_compat`). If a wholesale embedded-harness failure ever
-  reappears, it is a new bug, not the old flake — diagnose, don't re-run.
+- **One driver only (violated in Iteration 36):** two agent sessions ran full
+  gates concurrently; the pid stamps + system.query_log proved it. Before any
+  long gate, `ls` the terminals folder / check for running rspec-ruby
+  processes. The pid-suffixed harness database contains the blast radius, but
+  the authored suite still owns `ar_clickhouse_test` exclusively — concurrent
+  full gates will still collide there (spine tables, TRMNL corpus).
+- The harness database is now `ar_clickhouse_compat_<pid>`, created in
+  cases/helper.rb and dropped at_exit. `CLICKHOUSE_COMPAT_DATABASE` still
+  overrides it (CI uses the default). Killed runs leave a debris database
+  until the next `docker compose down`.
 - Manifest skips fire in `after_setup` (ledger #57); a class whose *own
   setup/teardown* breaks needs a suite-level `"*"` overlay entry instead
   (ledger #59 — two exist: AttributeMethodsTest in skips_edge.yml,
@@ -64,7 +59,8 @@ Pick one (value order):
 - The vendored corpus is pinned to 8.1.3; against Rails main, drift in the test
   *text* (not adapter behavior) goes in `skips_edge.yml`, which merges into the
   manifest only when `ActiveRecord.gem_version >= 8.2.0.alpha`. Re-pin the
-  corpus when 8.2 ships and delete the file.
+  corpus when 8.2 ships and delete the file. (Latest entry: LogSubscriber#sql
+  takes an Event object on main — three bind_parameter logging tests.)
 - Rails main runs need the edge bundle: `RAILS_SOURCE=edge BUNDLE_FROZEN=false
   bundle install` re-resolves against `../rails-main` (all three path gems);
   plain `bundle install` restores the release lock afterwards.
@@ -111,4 +107,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 37.
+read/write path was touched, this file rewritten for Iteration 38.

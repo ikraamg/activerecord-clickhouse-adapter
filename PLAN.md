@@ -1122,6 +1122,29 @@ that recorded zero forks). run.rb now permanently stamps every Minitest summary
 with its pid and prints a backtrace from any `Process._fork`, so the next
 sighting names the second process. Harness: 3,908 runs / 329 skips.
 
+**Phase 6 (cont.) — store, secure_token, counter_cache corpora; OLAP example;
+double-summary flake root-caused.** *(landed — Iteration 36)* Vendored three
+suites (116 runs): `store_test.rb` passes untouched (serialized/JSON store on
+existing admin_users columns), `counter_cache_test.rb` needs two
+`query_count_tally` skips (reset_counters emits the mutation path's COUNT(*)
+probe), `secure_token_test.rb` three `anonymous_model_primary_key` skips. One
+slice table (friendships). New `examples/olap_on_rails.rb`: a runnable
+narrated tour (fact table → insert_stream → prewhere/limit_by/group_by_period/
+rollup/window/dict_get → aggregate-state pipeline with merge: true →
+ReplacingMergeTree + final → partitions/EXPLAIN/instrumentation), guarded by
+`spec/examples/olap_on_rails_spec.rb` running it as a subprocess in its own
+database. **The double-summary flake is root-caused and fixed:** the pid stamp
+caught two complete rspec gates writing one redirect file (seeds 33333/37380,
+pids 86594/79931), and `system.query_log` showed one harness's alphabetical
+TRUNCATE fixture sweep interleaved microsecond-level with the other's test
+queries — two concurrent full gates sharing `ar_clickhouse_compat`, i.e. a
+one-driver-rule violation, not an adapter or harness bug. The harness database
+is now pid-suffixed (`ar_clickhouse_compat_<pid>`, dropped at_exit), making
+cross-run trampling mechanically impossible; the fork tracer is gone, the pid
+stamp stays. The 21 `Cancelled mutating parts` (code 341) errors in trampled
+runs were the concurrent TRUNCATEs aborting in-flight mutations. Harness:
+4,024 runs / 334 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per
