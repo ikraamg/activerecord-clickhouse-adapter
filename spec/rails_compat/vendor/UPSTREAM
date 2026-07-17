@@ -40,6 +40,20 @@ Vendored from rails/rails tag v8.1.3 (activerecord/test/), byte-exact:
 - cases/store_test.rb
 - cases/secure_token_test.rb
 - cases/counter_cache_test.rb
+- cases/query_cache_test.rb
+- cases/binary_test.rb
+- cases/boolean_test.rb
+- cases/date_test.rb
+- cases/date_time_test.rb
+- cases/numeric_data_test.rb
+- cases/json_attribute_test.rb
+- cases/json_shared_test_cases.rb
+- cases/null_relation_test.rb
+- cases/excluding_test.rb
+- cases/column_alias_test.rb
+- cases/dup_test.rb
+- cases/clone_test.rb
+- cases/sanitize_test.rb
 - support/fake_adapter.rb, support/ddl_helper.rb, support/schema_dumping_helper.rb
 - migrations/* (the fixture migration tree MIGRATIONS_ROOT points at)
 - cases/validations_repair_helper.rb

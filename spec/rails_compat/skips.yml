@@ -592,3 +592,46 @@ SecureTokenTest:
   test_generating_token_on_initialize_does_not_affect_reading_from_the_column: *anonymous_model_primary_key
   test_generating_token_on_initialize_happens_only_once: *anonymous_model_primary_key
   test_generating_token_on_initialize_is_skipped_if_column_was_not_selected: *anonymous_model_primary_key
+
+# query_cache corpus (Iteration 37).
+QueryCacheTest:
+  # ClickHouse has no row locks; .lock renders FOR UPDATE, a server syntax error.
+  test_cache_is_ignored_for_locked_relations: >-
+    no row locks — FOR UPDATE is a ClickHouse syntax error
+  # Transactions are no-ops, so the "rolled back" write persists and stays cached.
+  test_query_cache_doesnt_leak_cached_results_of_rolled_back_queries: *autosave_rollback
+
+QueryCacheExpiryTest:
+  # Upstream pins one connection across threads via transactional fixtures'
+  # lock_thread; this harness runs without transactional tests (no transactions),
+  # so the pool hands the spawned thread its own connection.
+  test_threads_use_the_same_connection: >-
+    no transactional fixtures — threads check out distinct connections
+
+# binary / date_time / json_attribute corpora (Iteration 37).
+BinaryTest:
+  # ClickHouse has one String type (byte-safe, no binary marker), so a column
+  # created as :binary reads back as an ordinary UTF-8 string — bytes round-trip
+  # but the BINARY encoding tag these tests assert is unrecoverable.
+  test_mixed_encoding: &binary_reads_utf8 >-
+    one String type — binary columns read back UTF-8, not ASCII-8BIT
+  test_load_save: *binary_reads_utf8
+  test_unicode_input_casting: *binary_reads_utf8
+
+DateTimeTest:
+  # DateTime64's range floor is 1900-01-01; the server clamps earlier values
+  # (probed live: 1807 stores as 1900), where upstream expects exact round-trip.
+  test_saves_both_date_and_time: >-
+    DateTime64 clamps below its 1900-01-01 range floor
+
+JsonAttributeTest:
+  # The test's own DDL (t.string without null: true) gets this adapter's
+  # non-nullable default (OLAP norm), so writing/selecting NULL payloads fails
+  # where upstream's nullable-by-default columns accept them.
+  test_select_nil_json_after_create: &non_nullable_by_default >-
+    columns are non-nullable by default; the test DDL omits null: true
+  test_select_nil_json_after_update: *non_nullable_by_default
+  # Raw UPDATE without WHERE: mutations require a WHERE clause, and 25.8 has no
+  # standalone UPDATE statement at all.
+  test_invalid_json_can_be_updated: >-
+    raw UPDATE without WHERE is invalid — mutations require a WHERE clause

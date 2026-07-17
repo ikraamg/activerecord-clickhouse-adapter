@@ -1145,6 +1145,22 @@ stamp stays. The 21 `Cancelled mutating parts` (code 341) errors in trampled
 runs were the concurrent TRUNCATEs aborting in-flight mutations. Harness:
 4,024 runs / 334 skips.
 
+**Phase 6 (cont.) — query_cache plus twelve type/relation corpora.** *(landed —
+Iteration 37)* Vendored thirteen suites (194 runs). `query_cache_test.rb`
+needed the upstream `clean_up_connection_handler` helper ported into the
+TestCase reopen and three skips: no row locks (FOR UPDATE is a syntax error),
+rollback leak (transactions are no-ops), and the threads-share-a-connection
+expiry test (upstream pins via transactional fixtures' lock_thread). Of the
+twelve small suites — binary, boolean, date, date_time, numeric_data,
+json_attribute (+ json_shared_test_cases), null_relation, excluding,
+column_alias, dup, clone, sanitize — nine pass untouched, including sanitize
+(quoting) and numeric_data (Decimal128 round-trips). Honest skips: BinaryTest's
+three encoding tests (one String type — bytes round-trip but the ASCII-8BIT
+tag is unrecoverable), DateTimeTest's 1807 round-trip (DateTime64 clamps below
+its 1900-01-01 floor, probed live), and JsonAttributeTest's three (NULL
+payloads on the adapter's non-nullable-by-default DDL; raw UPDATE without
+WHERE). No adapter changes. Harness: 4,218 runs / 345 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

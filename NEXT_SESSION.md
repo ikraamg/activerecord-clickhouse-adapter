@@ -1,13 +1,16 @@
-# Iteration 37: 0.2.0 readiness sweep, core cutover PR, or the next corpus
+# Iteration 38: 0.2.0 readiness sweep, core cutover PR, or the next corpus
 
-> Status at handoff: Iteration 36 landed the store/secure_token/counter_cache
-> corpora (116 runs, 5 skips — store passes untouched), the runnable
-> `examples/olap_on_rails.rb` tour (guarded by spec/examples, own database),
-> and root-caused the double-summary flake: it was two concurrent full gates
-> sharing ar_clickhouse_compat and one redirect file — a one-driver-rule
-> violation, not a harness bug. The harness database is now pid-suffixed and
-> dropped at_exit, so concurrent runs can no longer trample each other.
-> Harness: 4,024 runs / 334 skips. Gem suite 534 green, rubocop zero.
+> Status at handoff: Iteration 37 landed thirteen corpora (194 runs, 10 new
+> skips): query_cache (ported clean_up_connection_handler; no row locks, no
+> rollback, no lock_thread pinning) and twelve type/relation suites — nine of
+> them (boolean, date, numeric_data, null_relation, excluding, column_alias,
+> dup, clone, sanitize) pass untouched. Binary encoding tags, the DateTime64
+> 1900 range floor, and NULLs on non-nullable-by-default DDL are the honest
+> skips. Iteration 36 before it landed store/secure_token/counter_cache, the
+> runnable examples/olap_on_rails.rb tour, and root-caused the double-summary
+> flake (two concurrent full gates — the harness database is now pid-suffixed
+> and dropped at_exit). Harness: 4,218 runs / 345 skips. Gem suite 534 green,
+> rubocop zero.
 
 ## Scope
 
@@ -20,10 +23,10 @@ Pick one (value order):
    breaking-ish), and draft the CHANGELOG. Release only when Ikraam says so.
 2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-3. **Next corpus:** remaining unvendored suites worth mining —
-   `attribute_decorators_test` (gone in 8.1.3 — check for a successor),
-   the `adapters/`-shared `connection_test`, `query_cache_test`,
-   `explain_test` siblings, or `arel/*` units.
+3. **Next corpus:** remaining unvendored suites worth mining — `batches_test`
+   (find_each/in_batches, 1,132 lines, high consumer value),
+   `multiparameter_attributes_test`, `normalized_attribute_test`,
+   `secure_password_test`, `signed_id_test`, or `cache_key_test`.
 
 ## Watch out for (carried forward)
 
@@ -107,4 +110,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 38.
+read/write path was touched, this file rewritten for Iteration 39.

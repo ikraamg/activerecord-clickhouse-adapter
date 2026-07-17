@@ -291,6 +291,19 @@ module ActiveRecord
       ActiveRecord::Base.adapter_class.quote_table_name(name)
     end
 
+    # Upstream test/cases/test_case.rb; query-cache tests establish throwaway named
+    # connections and expect teardown to strip every non-default role/pool again.
+    def clean_up_connection_handler
+      handler = ActiveRecord::Base.connection_handler
+      handler.instance_variable_get(:@connection_name_to_pool_manager).each do |owner, pool_manager|
+        pool_manager.role_names.each do |role_name|
+          next if role_name == ActiveRecord::Base.default_role && owner == "ActiveRecord::Base"
+
+          pool_manager.remove_role(role_name)
+        end
+      end
+    end
+
     # Upstream test/cases/test_case.rb; schema-cache tests swap in a throwaway pool.
     def with_temporary_connection_pool(&)
       pool_config = ActiveRecord::Base.connection_pool.pool_config
