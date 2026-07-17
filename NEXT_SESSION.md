@@ -1,14 +1,13 @@
-# Iteration 34: core cutover PR, 0.1.1, or the next corpus
+# Iteration 35: core cutover PR, 0.2.0 release, or the next corpus
 
-> Status at handoff: Iteration 33 landed the datetime/time precision corpora
-> (19 runs; quoting_test turned out to be vendored since the original harness
-> commit). One real adapter fix (ledger #61): explicit `precision: nil` now maps to plain
-> `DateTime('UTC')`, precision >9 raises ArgumentError at DDL-build time,
-> `change_column` mirrors new_column_definition's key-presence defaulting, and
-> the dumper follows upstream's omit-6 / `precision: nil` conventions. Ten
-> manifest skips (seven `no_time_ddl`, two dumper-convention, one
-> nanosecond-bound). Harness: 3,743 runs / 306 skips. Gem suite 533 green,
-> rubocop zero.
+> Status at handoff: Iteration 34 landed four corpora. comment_test,
+> aggregations_test, and explain_test pass in full with zero skips —
+> comments, composed_of, and EXPLAIN were already exact. schema_dumper_test
+> needed five slice tables (CamelCase, goofy_string_id, integer_limits,
+> movies, string_key_objects) and 14 dump-shape convention skips; the
+> SchemaDumperDefaultsTest class retires via a `"*"` entry (its own setup DDL
+> uses t.time). No adapter changes. Harness: 3,815 runs / 320 skips. Gem
+> suite 533 green, rubocop zero.
 
 ## Scope
 
@@ -16,21 +15,33 @@ Pick one (value order):
 
 1. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-2. **0.1.1 release:** the Unreleased CHANGELOG now holds the decimal-DDL,
-   binary/blob, empty-insert, and datetime-precision fixes; cut it when Ikraam
-   wants consumers to pick those up.
+2. **Release:** the Unreleased CHANGELOG holds the decimal-DDL, binary/blob,
+   empty-insert, and datetime-precision fixes. The datetime default-precision
+   change (3 → 6) alters generated DDL, so this should probably be 0.2.0, not
+   0.1.1 — decide with Ikraam.
 3. **Next corpus:** remaining unvendored suites worth mining —
-   `calculations_test` siblings, `column_definition_test` (stub-adapter only,
-   tiny), `comment_test`, or `schema_dumper_test`.
+   `column_definition_test` (stub-adapter only, tiny), `bind_parameter_test`,
+   `attribute_decorators_test`, or `inheritance_test` (STI — the slice already
+   carries typed companies).
 
 ## Watch out for (carried forward)
 
+- **Double-summary flake (new, Iteration 34):** one full-harness run printed a
+  single `Run options` header but *two* `Finished in` summaries in one output,
+  with mass fixture-wipe RecordNotFound failures across previously-green
+  suites — i.e. two Minitest processes shared the run's stdout and database.
+  The identical seed (32235) re-ran green with one summary. The only vendored
+  `fork` site (BasicsTest#test_marshal_between_processes) is manifest-skipped
+  and exit!-guarded, so the mechanism is unconfirmed. If a harness output
+  shows two summaries, the run is invalid — re-run it; if it recurs, diagnose
+  the fork instead of skipping tests.
 - The full-gate storm is believed fixed by ledger #60 (harness owns
   `ar_clickhouse_compat`). If a wholesale embedded-harness failure ever
   reappears, it is a new bug, not the old flake — diagnose, don't re-run.
 - Manifest skips fire in `after_setup` (ledger #57); a class whose *own
   setup/teardown* breaks needs a suite-level `"*"` overlay entry instead
-  (ledger #59 — one exists: AttributeMethodsTest in skips_edge.yml).
+  (ledger #59 — two exist: AttributeMethodsTest in skips_edge.yml,
+  SchemaDumperDefaultsTest in skips.yml).
 - The tmpfs container fills up after several consecutive full-harness runs
   (NOT_ENOUGH_SPACE, code 243). `docker compose down && docker compose up -d
   --wait` is the factory reset. After the reset, give the port proxy ~10s —
@@ -96,4 +107,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 35.
+read/write path was touched, this file rewritten for Iteration 36.

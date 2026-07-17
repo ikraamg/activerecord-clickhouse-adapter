@@ -511,6 +511,42 @@ DateTimePrecisionTest:
     emits null: true for Nullable columns
   test_schema_dump_with_without_precision_has_precision_as_nil: *null_false_not_dumped
 
+# schema_dumper corpus (Iteration 34). The dumper follows ClickHouse conventions:
+# non-nullable is the default (null: false never dumped, null: true marks Nullable),
+# text/binary are the one String type, the sorting key dumps as order: (never
+# primary_key:), and id columns are explicit t.integer lines, not create_table ids.
+SchemaDumperTest:
+  test_schema_dump_includes_not_null_columns: *null_false_not_dumped
+  test_schema_dump_includes_limit_constraint_for_integer_columns: >-
+    Int64 dumps as t.integer limit: 8 (one integer family, sized by limit), not
+    t.bigint, and Nullable adds null: true where upstream expects a bare line
+  test_schema_dump_keeps_id_column_when_id_is_false_and_id_column_added: *null_false_not_dumped
+  test_schema_dump_does_not_include_limit_for_float_field: *null_false_not_dumped
+  test_schema_dump_does_not_include_limit_for_text_field: &single_string_type >-
+    ClickHouse has one String type; text and binary columns round-trip as t.string
+  test_schema_dump_does_not_include_limit_for_binary_field: *single_string_type
+  test_schema_dump_aliased_types: *single_string_type
+  test_schema_dump_should_honor_nonstandard_primary_keys: >-
+    the sorting key dumps as order:, never primary_key: — PRIMARY KEY is an index
+    prefix in ClickHouse, not identity (ledger)
+  test_table_columns_sorted: >-
+    ClickHouse has no implicit pk, so the dump carries an explicit t.integer id line
+    upstream's expected column list omits
+  test_schema_dumps_index_columns_in_right_order: &no_btree_indexes >-
+    upstream expects btree indexes on companies; ClickHouse data-skipping indexes are
+    a different construct (TYPE + GRANULARITY, no order/length/where/uniqueness)
+  test_schema_dumps_partial_indices: *no_btree_indexes
+  test_schema_dumps_nulls_not_distinct: *no_btree_indexes
+  test_schema_dumps_index_sort_order: *no_btree_indexes
+  test_schema_dumps_index_length: *no_btree_indexes
+
+# The class's own setup creates a t.time column, which the adapter refuses outright
+# (no TIME type) — setup raises before any per-test skip could fire.
+SchemaDumperDefaultsTest:
+  "*": >-
+    setup DDL uses t.time; ClickHouse has no TIME type and the adapter rejects it,
+    so every test's setup raises
+
 # ClickHouse has no TIME type and the adapter refuses :time columns rather than
 # shipping a lossy DateTime64 stand-in, so the whole suite's DDL raises.
 TimePrecisionTest:

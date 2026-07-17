@@ -36,7 +36,7 @@ module ARCompat
       1_need_quoting accounts admin_users aircraft articles articles_magazines articles_tags
       attachments audit_logs author_addresses
       author_favorites authors
-      auto_id_tests binaries birds book_identifiers books booleans bulbs cake_designers carriers cars carts
+      auto_id_tests CamelCase binaries birds book_identifiers books booleans bulbs cake_designers carriers cars carts
       categories categories_posts categorizations chefs citations clothing_items clubs
       cold_jokes colleges colnametests columns
       comment_overlapping_counter_caches comments
@@ -49,12 +49,12 @@ module ARCompat
       developers_projects
       dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays
       eyes faces families
-      family_trees funny_jokes guitars hardbacks having hotels humans
+      family_trees funny_jokes goofy_string_id guitars hardbacks having hotels humans
       images interests iris
-      invoices jobs jobs_pool keyboards kitchens lessons lessons_students line_items lions liquid
+      integer_limits invoices jobs jobs_pool keyboards kitchens lessons lessons_students line_items lions liquid
       magazines mateys
       member_details member_types members memberships mentors messages mice
-      minimalistics minivans molecules nodes non_primary_keys
+      minimalistics minivans molecules movies nodes non_primary_keys
       numeric_data orders organizations owners parrots parrots_pirates parrots_treasures people
       peoples_treasures pets pets_treasures pirates price_estimates prisoners professors
       program_offerings programs recipes
@@ -62,7 +62,8 @@ module ARCompat
       sections seminars sessions
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
       ship_parts ships shop_accounts sinks
-      speedometers sponsors squeaks students subscribers subscriptions taggings tags tasks tires topics
+      speedometers sponsors squeaks string_key_objects students subscribers subscriptions
+      taggings tags tasks tires topics
       toooooooooooooooooooooooooooooooooo_long_table_names toys traffic_lights translations treasures treaties
       trees tuning_pegs
       user_comments_counts users warehouse-things weirds wheels zines
@@ -231,6 +232,11 @@ module ARCompat
         t.string :name, null: true
         t.boolean :frickinawesome, default: false, null: true
         t.string :color, null: true
+      end
+
+      connection.create_table "CamelCase", force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
       end
 
       connection.create_table :cars, force: true, order: "id" do |t|
@@ -640,6 +646,11 @@ module ARCompat
         t.string :name, null: true
       end
 
+      connection.create_table :goofy_string_id, force: true, id: false, order: "id" do |t|
+        t.string :id, null: false
+        t.string :info, null: true
+      end
+
       connection.create_table :guitars, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :color, null: true
@@ -675,6 +686,14 @@ module ARCompat
         t.integer :id, limit: 8
         t.integer :eye_id, limit: 8, null: true
         t.string :color, null: true
+      end
+
+      connection.create_table :integer_limits, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :c_int_without_limit, null: true
+        (1..8).each do |i|
+          t.integer :"c_int_#{i}", limit: i, null: true
+        end
       end
 
       connection.create_table :invoices, force: true, order: "id" do |t|
@@ -1142,6 +1161,17 @@ module ARCompat
         t.string :name, null: true
         t.boolean :active, null: true
         t.integer :college_id, limit: 8, null: true
+      end
+
+      connection.create_table :movies, force: true, id: false, order: "movieid" do |t|
+        t.integer :movieid, limit: 8
+        t.string :name, null: true
+      end
+
+      connection.create_table :string_key_objects, force: true, id: false, order: "id" do |t|
+        t.string :id, null: false
+        t.string :name, null: true
+        t.integer :lock_version, null: false, default: 0
       end
 
       connection.create_table :subscribers, force: true, order: "nick" do |t|

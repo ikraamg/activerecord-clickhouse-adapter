@@ -1079,6 +1079,25 @@ than shipping a lossy stand-in), two dumper-convention (`null: false` omitted
 as the ClickHouse default), one nanosecond-bound (precision 7 is valid here;
 upstream's 6 is a MySQL/Postgres cap). Harness: 3,743 runs / 306 skips.
 
+**Phase 6 (cont.) — dumper, comments, aggregations, explain corpora.** *(landed
+— Iteration 34)* Vendored four suites: `comment_test.rb`, `aggregations_test.rb`
+(composed_of), and `explain_test.rb` all pass in full with zero skips — column/
+table/index comments, value objects, and EXPLAIN were already exact.
+`schema_dumper_test.rb` needed five slice tables (CamelCase, goofy_string_id,
+integer_limits, movies, string_key_objects) and 14 convention skips, all
+documenting dump-shape dialect: null: false is never dumped (non-nullable is the
+ClickHouse default), text/binary round-trip as the one String type, Int64 dumps
+as `t.integer limit: 8` (one integer family), the sorting key dumps as `order:`
+never `primary_key:`, id columns are explicit lines (no implicit pk), and
+data-skipping indexes are not btree indexes (no order/length/where). The
+`SchemaDumperDefaultsTest` class retires via a `"*"` entry — its own setup DDL
+uses `t.time`. No adapter changes. One flake sighting: a full-harness run
+produced two interleaved Minitest summaries in one output (one process header,
+two "Finished in" lines) with mass fixture-wipe failures; identical seed re-ran
+green with a single summary. Mechanism unknown (the only vendored `fork` site is
+manifest-skipped and exit!-guarded); treat a double-summary output as invalid
+and re-run. Harness: 3,815 runs / 320 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per
