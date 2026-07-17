@@ -1,13 +1,18 @@
-# Iteration 35: core cutover PR, 0.2.0 release, or the next corpus
+# Iteration 36: core cutover PR, 0.2.0 release, or the next corpus
 
-> Status at handoff: Iteration 34 landed four corpora. comment_test,
-> aggregations_test, and explain_test pass in full with zero skips —
-> comments, composed_of, and EXPLAIN were already exact. schema_dumper_test
-> needed five slice tables (CamelCase, goofy_string_id, integer_limits,
-> movies, string_key_objects) and 14 dump-shape convention skips; the
-> SchemaDumperDefaultsTest class retires via a `"*"` entry (its own setup DDL
-> uses t.time). No adapter changes. Harness: 3,815 runs / 320 skips. Gem
-> suite 533 green, rubocop zero.
+> Status at handoff: Iteration 35 landed three corpora. column_definition_test
+> passes untouched (stub-adapter only). inheritance_test (STI, four classes,
+> 73 runs) needs one skip (circular self-join) and autoloads deliberately-
+> broken models through a Zeitwerk loader rooted at the new MODELS_ROOT
+> (zeitwerk is now a dev-only dependency). bind_parameter_test carries eight
+> skips in two groups: no server-side prepared statements over HTTP (no
+> StatementPool to introspect), and no client-side bind limit (the 65k-bind
+> probe trips the server's max_query_size instead). Five slice tables
+> (collections, products, product_types, variants, vegetables). One latent
+> harness bug fixed: run.rb now creates schema_migrations +
+> ar_internal_metadata after the slice, since several MigrationTest tests
+> assume they exist (seed-order dependent before). No adapter changes.
+> Harness: 3,908 runs / 329 skips. Gem suite 533 green, rubocop zero.
 
 ## Scope
 
@@ -20,21 +25,20 @@ Pick one (value order):
    change (3 → 6) alters generated DDL, so this should probably be 0.2.0, not
    0.1.1 — decide with Ikraam.
 3. **Next corpus:** remaining unvendored suites worth mining —
-   `column_definition_test` (stub-adapter only, tiny), `bind_parameter_test`,
-   `attribute_decorators_test`, or `inheritance_test` (STI — the slice already
-   carries typed companies).
+   `attribute_decorators_test`, `store_test`, `secure_token_test`,
+   `counter_cache_test`, or the `adapters/`-shared `connection_test`.
 
 ## Watch out for (carried forward)
 
-- **Double-summary flake (new, Iteration 34):** one full-harness run printed a
-  single `Run options` header but *two* `Finished in` summaries in one output,
-  with mass fixture-wipe RecordNotFound failures across previously-green
-  suites — i.e. two Minitest processes shared the run's stdout and database.
-  The identical seed (32235) re-ran green with one summary. The only vendored
-  `fork` site (BasicsTest#test_marshal_between_processes) is manifest-skipped
-  and exit!-guarded, so the mechanism is unconfirmed. If a harness output
-  shows two summaries, the run is invalid — re-run it; if it recurs, diagnose
-  the fork instead of skipping tests.
+- **Double-summary flake (Iterations 34–35, twice):** a full-harness run
+  prints a single `Run options` header but *two* `Finished in` summaries in
+  one output, with mass fixture-wipe RecordNotFound failures across
+  previously-green suites — two Minitest processes sharing the run's stdout
+  and database. Both sightings (seeds 32235, 23574) re-ran green on the same
+  seed; a `Process._fork` tracer recorded zero forks on the green rerun.
+  run.rb now permanently stamps each summary with its pid and backtraces any
+  fork — the next sighting will name the second process. A double-summary
+  output is invalid: re-run it, and read the new pid/fork stamps.
 - The full-gate storm is believed fixed by ledger #60 (harness owns
   `ar_clickhouse_compat`). If a wholesale embedded-harness failure ever
   reappears, it is a new bug, not the old flake — diagnose, don't re-run.
@@ -107,4 +111,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 36.
+read/write path was touched, this file rewritten for Iteration 37.

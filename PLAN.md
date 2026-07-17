@@ -1098,6 +1098,30 @@ green with a single summary. Mechanism unknown (the only vendored `fork` site is
 manifest-skipped and exit!-guarded); treat a double-summary output as invalid
 and re-run. Harness: 3,815 runs / 320 skips.
 
+**Phase 6 (cont.) — bind parameter, column definition, inheritance corpora.**
+*(landed — Iteration 35)* Vendored three suites. `column_definition_test.rb`
+passes untouched (stub-adapter only). `inheritance_test.rb` (STI: compute_type,
+becomes, discriminator mapping, four classes) runs 73 tests with a single skip
+(the circular self-join analyzer limit, reusing `self_join_ambiguity`); it
+autoloads deliberately-broken model files through a Zeitwerk loader rooted at
+the new `MODELS_ROOT`, adding zeitwerk as a dev-only dependency.
+`bind_parameter_test.rb` needed eight skips in two honest groups: six because
+the HTTP interface has no server-side prepared statements, so the adapter keeps
+no `@statements` StatementPool to introspect, and two because the adapter has no
+client-side bind limit — upstream's 65k-bind probe becomes one giant inlined IN
+list that trips the server's 256KB `max_query_size` (code 62) instead of Rails'
+bind-inlining path. Five slice tables (collections, products, product_types,
+variants, vegetables). No adapter changes. One latent seed-order bug fixed in
+the harness bootstrap: several MigrationTest internal-metadata tests assume
+`ar_internal_metadata`/`schema_migrations` already exist (upstream's db:prepare
+rake task leaves them behind); run.rb now creates both after the schema slice,
+so the tests no longer depend on whether an earlier test created them as a side
+effect. The double-summary flake recurred once (seed 23574: two "Finished in"
+lines, mass fixture trampling; identical seed re-ran green under a fork tracer
+that recorded zero forks). run.rb now permanently stamps every Minitest summary
+with its pid and prints a backtrace from any `Process._fork`, so the next
+sighting names the second process. Harness: 3,908 runs / 329 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

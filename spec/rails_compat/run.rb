@@ -14,7 +14,27 @@ require "schema_slice"
 
 ARCompat::SchemaSlice.load(ActiveRecord::Base.lease_connection)
 
+# Upstream's test database is prepared by a rake task that leaves both migration
+# infrastructure tables in place; several MigrationTest cases (internal metadata
+# reads/deletes) assume they exist rather than creating them — seed-order latent
+# otherwise, because only *some* MigrationTest tests create them as a side effect.
+ActiveRecord::Base.connection_pool.schema_migration.create_table
+ActiveRecord::Base.connection_pool.internal_metadata.create_table
+
 Dir[File.expand_path("vendor/cases/**/*_test.rb", __dir__)].each { |file| require file }
 
 ARCompat.apply_suite_exclusions
 ARCompat::SchemaSlice.assign_model_primary_keys
+
+# Twice now a run has printed one Minitest header but two "Finished in" summaries —
+# two processes sharing the run's stdout and database (PLAN.md §6, Iteration 34/35).
+# Stamp every summary with its pid and trace any fork so the next sighting names
+# the second process and where it came from.
+Minitest.after_run { warn "rails-compat harness summary from pid #{Process.pid}" }
+Process.singleton_class.prepend(Module.new do
+  def _fork
+    warn "rails-compat harness fork from pid #{Process.pid} at:"
+    caller.first(12).each { |line| warn "  #{line}" }
+    super
+  end
+end)
