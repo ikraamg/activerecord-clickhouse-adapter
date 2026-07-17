@@ -26,3 +26,9 @@ AttributeMethodsTest:
   "*": >-
     Rails main froze attribute_method_patterns (ractor safety); the pinned suite's
     teardown mutates it in place with clear/concat, erroring every test in the class
+ActiveRecord::BindParameterTest:
+  test_binds_with_filtered_attributes: &event_object_payload >-
+    Rails main's LogSubscriber#sql receives an ActiveSupport Event object (no #[]);
+    the pinned tests drive it with a hash payload
+  test_logs_unnamed_binds: *event_object_payload
+  test_logs_binds_after_type_cast: *event_object_payload
