@@ -1,5 +1,11 @@
 # Unreleased
 
+- Fixed datetime DDL bounds: precision past 9 (nanoseconds, ClickHouse's maximum) now
+  raises `ArgumentError` at migration time instead of a server error, and an explicit
+  `precision: nil` maps to the second-precision base `DateTime` (a bare `t.datetime`
+  still gets Rails' default microseconds)
+- Fixed schema dumps of datetime precision to follow Rails conventions: the default 6
+  is omitted and a precision-less `DateTime` dumps as `precision: nil`
 - Fixed decimal DDL bounds: `precision:` without `scale:` now means scale 0 (the old
   `Decimal(N, 10)` shape was invalid for N < 10), and `scale:` without `precision:`
   raises the same `ArgumentError` as Rails' bundled adapters

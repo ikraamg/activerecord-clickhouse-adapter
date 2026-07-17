@@ -107,6 +107,21 @@ RSpec.describe "ClickHouse schema statements" do
     expect(connection.type_to_sql("datetime(6)")).to eq("DateTime64(6, 'UTC')")
   end
 
+  it "accepts nanosecond datetime precision (ClickHouse's maximum)" do
+    expect(connection.type_to_sql(:datetime, precision: 9)).to eq("DateTime64(9, 'UTC')")
+  end
+
+  # Rails injects precision 6 for a bare t.datetime; a nil that survives to the adapter
+  # was explicit (precision: nil), meaning the second-precision base type.
+  it "maps a precision-less datetime to plain DateTime" do
+    expect(connection.type_to_sql(:datetime)).to eq("DateTime('UTC')")
+  end
+
+  it "rejects datetime precision past nanoseconds like the server would (code 69)" do
+    expect { connection.type_to_sql(:datetime, precision: 10) }
+      .to raise_error(ArgumentError, /No timestamp type has precision of 10/)
+  end
+
   it "defaults decimal scale to zero when only precision is given" do
     expect(connection.type_to_sql(:decimal, precision: 2)).to eq("Decimal(2, 0)")
   end

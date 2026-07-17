@@ -143,12 +143,6 @@ module ActiveRecord
           spec
         end
 
-        # Rails omits precision 6 as the datetime default, but this adapter's default is
-        # DateTime64(3) — always dump the real precision.
-        def schema_precision(column)
-          column.precision&.inspect
-        end
-
         WRAPPER_TYPES = { /\ALowCardinality\((.*)\)\z/m => :low_cardinality, /\ANullable\((.*)\)\z/m => :null }.freeze
         private_constant :WRAPPER_TYPES
 

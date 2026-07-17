@@ -315,10 +315,11 @@ module ActiveRecord
           when "string", "text", "binary", "blob" then "String"
           when "float" then "Float64"
           when "decimal", "numeric" then decimal_to_sql(precision, scale)
-          # Rails' shared tests pass mysql-style parenthesized precision ("datetime(6)");
-          # the naked default matches Rails' microsecond convention, not CH's ms.
+          # Rails' shared tests pass mysql-style parenthesized precision ("datetime(6)").
+          # A nil precision here was explicit — Rails injects 6 for a bare t.datetime —
+          # so it means the second-precision base type, like MySQL's plain datetime.
           when /\A(?:datetime|timestamp)(?:\((\d+)\))?\z/
-            "DateTime64(#{Regexp.last_match(1) || precision || 6}, 'UTC')"
+            datetime_to_sql(Regexp.last_match(1) || precision)
           when "date" then "Date32"
           when "boolean" then "Bool"
           when "uuid" then "UUID"
@@ -417,6 +418,9 @@ module ActiveRecord
         end
 
         def changed_column_sql_type(type, options)
+          # Mirror new_column_definition: a datetime change without a precision key gets
+          # Rails' default microseconds; an explicit precision: nil stays plain DateTime.
+          options = { precision: 6, **options } if %i[datetime timestamp].include?(type.to_s.to_sym)
           sql_type = type_to_sql(type, **options.slice(:limit, :precision, :scale))
           sql_type = "Nullable(#{sql_type})" if options[:null]
           sql_type = "LowCardinality(#{sql_type})" if options[:low_cardinality]
@@ -612,6 +616,20 @@ module ActiveRecord
           else
             options
           end
+        end
+
+        # DateTime64 tops out at nanoseconds; the server rejects scale 10+ with
+        # ARGUMENT_OUT_OF_BOUND (code 69, probed live). Raise Rails' own wording at
+        # DDL-build time instead, matching the bundled adapters' 0..6 checks.
+        def datetime_to_sql(precision)
+          return "DateTime('UTC')" if precision.nil?
+
+          unless (0..9).cover?(precision.to_i)
+            raise ArgumentError, "No timestamp type has precision of #{precision}. " \
+                                 "The allowed range of precision is from 0 to 9"
+          end
+
+          "DateTime64(#{precision}, 'UTC')"
         end
 
         # Bare precision means scale 0 (SQL convention; Decimal(2, 10) is
