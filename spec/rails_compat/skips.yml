@@ -580,3 +580,15 @@ ActiveRecord::BindParameterTest:
 # inheritance corpus (Iteration 35).
 InheritanceTest:
   test_scope_inherited_properly: *self_join_ambiguity
+
+# counter_cache / secure_token corpora (Iteration 36).
+CounterCacheTest:
+  # reset_counters emits our mutation path's COUNT(*) probe before ALTER UPDATE,
+  # so the tally is one query higher than upstream expects.
+  test_reset_counter_skips_query_for_correct_counter: *query_count_tally
+  "test_reset_counter_performs_query_for_correct_counter_with_touch:_true": *query_count_tally
+
+SecureTokenTest:
+  test_generating_token_on_initialize_does_not_affect_reading_from_the_column: *anonymous_model_primary_key
+  test_generating_token_on_initialize_happens_only_once: *anonymous_model_primary_key
+  test_generating_token_on_initialize_is_skipped_if_column_was_not_selected: *anonymous_model_primary_key

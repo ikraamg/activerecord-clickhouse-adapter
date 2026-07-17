@@ -49,7 +49,7 @@ module ARCompat
       developers_projects
       dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays
       eyes faces families
-      family_trees funny_jokes goofy_string_id guitars hardbacks having hotels humans
+      family_trees friendships funny_jokes goofy_string_id guitars hardbacks having hotels humans
       images interests iris
       integer_limits invoices jobs jobs_pool keyboards kitchens lessons lessons_students line_items lions liquid
       magazines mateys
@@ -644,6 +644,12 @@ module ARCompat
       connection.create_table :funny_jokes, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
+      end
+
+      connection.create_table :friendships, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :friend_id, limit: 8, null: true
+        t.integer :follower_id, limit: 8, null: true
       end
 
       connection.create_table :goofy_string_id, force: true, id: false, order: "id" do |t|
