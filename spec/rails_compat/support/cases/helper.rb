@@ -152,6 +152,10 @@ QUOTED_TYPE = ActiveRecord::Base.lease_connection.quote_column_name("type")
 # beside the vendored cases.
 MIGRATIONS_ROOT = File.expand_path("../../vendor/migrations", __dir__)
 
+# Upstream test/config.rb: inheritance_test autoloads deliberately-broken model files
+# from here to prove compute_type surfaces load-time errors.
+MODELS_ROOT = File.expand_path("../../vendor/models", __dir__)
+
 # Upstream defines this in test/cases/helper.rb; async query tests include it to
 # drain the pool's async executor before asserting.
 module WaitForAsyncTestHelper

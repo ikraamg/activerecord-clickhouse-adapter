@@ -37,7 +37,7 @@ module ARCompat
       attachments audit_logs author_addresses
       author_favorites authors
       auto_id_tests CamelCase binaries birds book_identifiers books booleans bulbs cake_designers carriers cars carts
-      categories categories_posts categorizations chefs citations clothing_items clubs
+      categories categories_posts categorizations chefs citations clothing_items clubs collections
       cold_jokes colleges colnametests columns
       comment_overlapping_counter_caches comments
       companies computers
@@ -56,7 +56,7 @@ module ARCompat
       member_details member_types members memberships mentors messages mice
       minimalistics minivans molecules movies nodes non_primary_keys
       numeric_data orders organizations owners parrots parrots_pirates parrots_treasures people
-      peoples_treasures pets pets_treasures pirates price_estimates prisoners professors
+      peoples_treasures pets pets_treasures pirates price_estimates prisoners product_types products professors
       program_offerings programs recipes
       post_comments_counts posts projects ratings readers records references rooms
       sections seminars sessions
@@ -65,7 +65,7 @@ module ARCompat
       speedometers sponsors squeaks string_key_objects students subscribers subscriptions
       taggings tags tasks tires topics
       toooooooooooooooooooooooooooooooooo_long_table_names toys traffic_lights translations treasures treaties
-      trees tuning_pegs
+      trees tuning_pegs variants vegetables
       user_comments_counts users warehouse-things weirds wheels zines
     ].freeze
 
@@ -958,6 +958,37 @@ module ARCompat
         t.integer :non_validated_parrot_id, limit: 8, null: true
         t.datetime :created_on, precision: 6, null: true
         t.datetime :updated_on, precision: 6, null: true
+      end
+
+      connection.create_table :collections, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
+      connection.create_table :products, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :collection_id, limit: 8, null: true
+        t.integer :type_id, limit: 8, null: true
+        t.string :name, null: true
+        t.decimal :price, null: true
+      end
+
+      connection.create_table :product_types, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
+      connection.create_table :variants, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :product_id, limit: 8, null: true
+        t.string :name, null: true
+      end
+
+      connection.create_table :vegetables, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+        t.integer :seller_id, limit: 8, null: true
+        t.string :custom_type, null: true
       end
 
       connection.create_table :price_estimates, force: true, order: "id" do |t|

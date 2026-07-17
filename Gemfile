@@ -38,4 +38,6 @@ group :development, :test do
   gem "rspec"
   gem "rubocop", require: false
   gem "rubocop-rspec", require: false
+  # The vendored inheritance_test exercises STI against a Zeitwerk autoload path.
+  gem "zeitwerk", require: false
 end

@@ -558,3 +558,25 @@ TimePrecisionTest:
   test_invalid_time_precision_raises_error: *no_time_ddl
   test_formatting_time_according_to_precision: *no_time_ddl
   test_schema_dump_includes_time_precision: *no_time_ddl
+
+# bind_parameter corpus (Iteration 35).
+ActiveRecord::BindParameterTest:
+  # The HTTP interface has no server-side prepared statements, so the adapter keeps
+  # no @statements StatementPool for these tests to introspect.
+  test_statement_cache: &no_statement_pool >-
+    no prepared statements over HTTP — the adapter keeps no StatementPool
+  test_statement_cache_with_query_cache: *no_statement_pool
+  test_statement_cache_with_sql_string_literal: *no_statement_pool
+  test_statement_cache_with_find: *no_statement_pool
+  test_statement_cache_with_find_by: *no_statement_pool
+  test_statement_cache_with_in_clause: *no_statement_pool
+  # Upstream proves Rails inlines binds past the server's bind limit; this adapter
+  # has no bind limit, so the 65k-value IN list becomes literal SQL that trips the
+  # server's 256KB max_query_size (code 62) instead.
+  test_too_many_binds: &no_bind_limit >-
+    no client-side bind limit; the giant inlined IN list exceeds max_query_size
+  test_too_many_binds_with_query_cache: *no_bind_limit
+
+# inheritance corpus (Iteration 35).
+InheritanceTest:
+  test_scope_inherited_properly: *self_join_ambiguity
