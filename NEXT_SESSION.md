@@ -1,17 +1,14 @@
-# Iteration 33: core cutover PR, 0.1.1, or the next corpus
+# Iteration 34: core cutover PR, 0.1.1, or the next corpus
 
-> Status at handoff: Iteration 32 landed the defaults + reflection corpora
-> (243 runs; five models — hotel, recipe, hardback, user_with_invalid_relation,
-> company_in_module; three slice tables; `SchemaDumpingHelper` port; one skip
-> reusing the string-limit seam) plus two structural harness fixes. Ledger #59:
-> suite-level `"*"` overlay entries retire a vendored class whose own
-> setup/teardown breaks on that Rails version (Rails main froze
-> `attribute_method_patterns`; the pinned attribute_methods teardown mutates it
-> in place, erroring all 117 tests). Ledger #60: the harness subprocess now
-> bootstraps and owns `ar_clickhouse_compat` (override:
-> `CLICKHOUSE_COMPAT_DATABASE`), ending the shared-namespace full-gate storm.
-> Harness: 3,724 runs / 296 skips. Gem suite 530 green, rubocop zero, CI green
-> on all six jobs.
+> Status at handoff: Iteration 33 landed the datetime/time precision corpora
+> (19 runs; quoting_test turned out to be vendored since the original harness
+> commit). One real adapter fix (ledger #61): explicit `precision: nil` now maps to plain
+> `DateTime('UTC')`, precision >9 raises ArgumentError at DDL-build time,
+> `change_column` mirrors new_column_definition's key-presence defaulting, and
+> the dumper follows upstream's omit-6 / `precision: nil` conventions. Ten
+> manifest skips (seven `no_time_ddl`, two dumper-convention, one
+> nanosecond-bound). Harness: 3,743 runs / 306 skips. Gem suite 533 green,
+> rubocop zero.
 
 ## Scope
 
@@ -19,12 +16,12 @@ Pick one (value order):
 
 1. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-2. **0.1.1 release:** the Unreleased CHANGELOG section already holds the
-   decimal-DDL, binary/blob, and empty-insert fixes; cut it when Ikraam wants
-   consumers to pick those up.
+2. **0.1.1 release:** the Unreleased CHANGELOG now holds the decimal-DDL,
+   binary/blob, empty-insert, and datetime-precision fixes; cut it when Ikraam
+   wants consumers to pick those up.
 3. **Next corpus:** remaining unvendored suites worth mining —
-   `calculations_test` siblings, `date_time_precision_test`,
-   `time_precision_test`, `column_definition_test`, or `quoting_test`.
+   `calculations_test` siblings, `column_definition_test` (stub-adapter only,
+   tiny), `comment_test`, or `schema_dumper_test`.
 
 ## Watch out for (carried forward)
 
@@ -43,7 +40,9 @@ Pick one (value order):
   `Decimal(N, 0)` are this fix (the old shape was invalid for N < 10 anyway).
 - `t.datetime` now defaults to precision 6. Any consumer schema diff noise of
   `DateTime64(3)` → `DateTime64(6)` is this, not a bug; explicit `precision: 3`
-  restores the old shape.
+  restores the old shape. And since Iteration 33, `precision: nil` (explicit)
+  means plain second-precision `DateTime` — schema dumps omit precision 6 and
+  write `precision: nil` for the plain type, per upstream convention.
 - `primary_keys` still returns `[]` by design (§5) — the migration corpus skip
   for `test_removing_and_renaming_column_preserves_custom_primary_key` is the
   visible cost. Open question for Ikraam below.
@@ -97,4 +96,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 34.
+read/write path was touched, this file rewritten for Iteration 35.

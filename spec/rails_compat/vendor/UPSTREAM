@@ -28,6 +28,8 @@ Vendored from rails/rails tag v8.1.3 (activerecord/test/), byte-exact:
 - cases/attribute_methods_test.rb
 - cases/defaults_test.rb
 - cases/reflection_test.rb
+- cases/date_time_precision_test.rb
+- cases/time_precision_test.rb
 - support/fake_adapter.rb, support/ddl_helper.rb, support/schema_dumping_helper.rb
 - migrations/* (the fixture migration tree MIGRATIONS_ROOT points at)
 - cases/validations_repair_helper.rb

@@ -625,6 +625,16 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     `ar_clickhouse_compat` (override: `CLICKHOUSE_COMPAT_DATABASE`), killing
     the shared-namespace hazard outright.
 
+61. **Explicit `precision: nil` means plain DateTime** *(Iteration 33)*: Rails
+    injects precision 6 for a bare `t.datetime` (new_column_definition checks
+    `options.key?(:precision)`), so a nil that reaches `type_to_sql` was
+    explicit — it now maps to second-precision `DateTime('UTC')`, mirroring
+    MySQL's plain `datetime`. Precision past 9 (DateTime64's nanosecond cap,
+    ARGUMENT_OUT_OF_BOUND code 69 live) raises Rails' own ArgumentError wording
+    at DDL-build time. `change_column` gained the same key-presence defaulting,
+    and the dumper's always-dump-precision override is gone: the adapter default
+    is 6, so upstream's omit-6 / `precision: nil` conventions apply verbatim.
+
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
 **Phase 0 — Foundations** *(done)*
@@ -1055,6 +1065,19 @@ breaks on that Rails version (ledger #59 — Rails main froze
 and the harness subprocess now runs in its own `ar_clickhouse_compat` database
 (ledger #60 — ends the shared-namespace full-gate storm for good).
 Harness: 3,724 runs / 296 skips.
+
+**Phase 6 (cont.) — datetime/time precision corpora.** *(landed —
+Iteration 33)* Vendored `date_time_precision_test.rb` and
+`time_precision_test.rb` (`quoting_test.rb` turned out to be in the original
+harness commit already). The precision corpus drove one real adapter fix
+(ledger #61): explicit `precision: nil` now maps to plain `DateTime('UTC')`,
+precision >9 raises ArgumentError at DDL-build time, `change_column` mirrors
+new_column_definition's key-presence defaulting, and the schema dumper follows
+upstream's omit-6 / `precision: nil` conventions. Ten manifest skips: seven
+`no_time_ddl` (ClickHouse has no TIME type; the adapter refuses `:time` rather
+than shipping a lossy stand-in), two dumper-convention (`null: false` omitted
+as the ClickHouse default), one nanosecond-bound (precision 7 is valid here;
+upstream's 6 is a MySQL/Postgres cap). Harness: 3,743 runs / 306 skips.
 
 ## 7. Spec strategy (three tiers)
 

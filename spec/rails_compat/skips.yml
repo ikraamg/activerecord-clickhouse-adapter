@@ -500,3 +500,25 @@ AttributeMethodsTest:
 # reflection corpus (Iteration 32). Reuses the string-limit seam.
 ReflectionTest:
   test_column_string_type_and_limit: *string_limit
+
+# datetime/time precision corpora (Iteration 33).
+DateTimePrecisionTest:
+  test_invalid_datetime_precision_raises_error: >-
+    DateTime64 goes to nanoseconds — precision 7 is valid here (the adapter raises
+    only past 9); upstream's limit of 6 is a MySQL/Postgres bound
+  test_schema_dump_with_default_precision_is_not_dumped: &null_false_not_dumped >-
+    non-nullable is the ClickHouse default, so the dumper omits null: false and only
+    emits null: true for Nullable columns
+  test_schema_dump_with_without_precision_has_precision_as_nil: *null_false_not_dumped
+
+# ClickHouse has no TIME type and the adapter refuses :time columns rather than
+# shipping a lossy DateTime64 stand-in, so the whole suite's DDL raises.
+TimePrecisionTest:
+  test_time_data_type_with_precision: &no_time_ddl >-
+    ClickHouse has no TIME type; the adapter rejects :time columns outright
+  test_time_precision_is_truncated_on_assignment: *no_time_ddl
+  test_no_time_precision_isnt_truncated_on_assignment: *no_time_ddl
+  test_passing_precision_to_time_does_not_set_limit: *no_time_ddl
+  test_invalid_time_precision_raises_error: *no_time_ddl
+  test_formatting_time_according_to_precision: *no_time_ddl
+  test_schema_dump_includes_time_precision: *no_time_ddl
