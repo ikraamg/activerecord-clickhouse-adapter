@@ -20,6 +20,16 @@ AllCops:
 Style/Documentation:
   Enabled: false
 
+# The runnable example is a narrated script: several small models in one file
+# and date-shaped locals (july_15) are the point, not a smell.
+Style/OneClassPerFile:
+  Exclude:
+    - examples/**/*
+
+Naming/VariableNumber:
+  Exclude:
+    - examples/**/*
+
 # Match the Rails codebase this gem plugs into.
 Style/StringLiterals:
   EnforcedStyle: double_quotes

@@ -25,6 +25,10 @@ Requires Active Record 8.1+, Ruby 3.2+, and ClickHouse 25.8+ (each LTS from 25.8
 
 ## Getting Started
 
+For a runnable end-to-end tour — fact table, streaming ingestion, dictionary
+lookups, the aggregate-state pipeline, partitions — see
+[`examples/olap_on_rails.rb`](examples/olap_on_rails.rb).
+
 Add a ClickHouse database to `config/database.yml`:
 
 ```yaml
