@@ -246,6 +246,8 @@ ActiveSupport::Notifications.subscribe("sql.active_record") do |event|
 end
 ```
 
+The standard `payload[:affected_rows]` reports the server's written rows on inserts.
+
 `explain` supports ClickHouse variants:
 
 ```ruby
@@ -301,7 +303,7 @@ RAILS_SOURCE=edge bundle install
 RAILS_SOURCE=edge bundle exec rspec
 ```
 
-The suite includes a Rails compatibility harness that runs vendored upstream Active Record test suites (~1,600 tests) against the adapter. See `spec/rails_compat/`.
+The suite includes a Rails compatibility harness that runs vendored upstream Active Record test suites (~4,500 tests) against the adapter. See `spec/rails_compat/`.
 
 ## History
 

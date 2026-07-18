@@ -1,4 +1,27 @@
-# Unreleased
+# Unreleased (0.2.0 draft)
+
+Breaking-ish (schema diff noise, not data changes):
+
+- Updated `t.datetime` to default to precision 6 (microseconds, Rails' convention) —
+  previously an unqualified datetime rendered `DateTime64(3)`. Existing consumer
+  schemas diff as `DateTime64(3)` → `DateTime64(6)`; declare `precision: 3` to keep
+  the old shape
+- Fixed decimal DDL bounds: `precision:` without `scale:` now means scale 0 (the old
+  `Decimal(N, 10)` shape was invalid for N < 10), and `scale:` without `precision:`
+  raises the same `ArgumentError` as Rails' bundled adapters
+
+Added:
+
+- Added a runnable OLAP-on-Rails example (`examples/olap_on_rails.rb`): fact table,
+  streaming ingestion, dictionary lookups, the aggregate-state pipeline, mutable
+  dimensions via ReplacingMergeTree + `final`, partitions, and instrumentation —
+  guarded by a live spec so it cannot drift
+- Added `:binary`/`:blob` column types, mapped to `String` (ClickHouse strings are
+  arbitrary byte sequences)
+- Added `payload[:affected_rows]` to `sql.active_record` notifications, populated
+  from the server summary's written rows on every query and on `insert_stream`
+
+Fixed:
 
 - Fixed datetime DDL bounds: precision past 9 (nanoseconds, ClickHouse's maximum) now
   raises `ArgumentError` at migration time instead of a server error, and an explicit
@@ -6,13 +29,21 @@
   still gets Rails' default microseconds)
 - Fixed schema dumps of datetime precision to follow Rails conventions: the default 6
   is omitted and a precision-less `DateTime` dumps as `precision: nil`
-- Fixed decimal DDL bounds: `precision:` without `scale:` now means scale 0 (the old
-  `Decimal(N, 10)` shape was invalid for N < 10), and `scale:` without `precision:`
-  raises the same `ArgumentError` as Rails' bundled adapters
-- Added `:binary`/`:blob` column types, mapped to `String` (ClickHouse strings are
-  arbitrary byte sequences)
 - Fixed attribute-less creates: Rails' `INSERT INTO t DEFAULT VALUES` is not ClickHouse
   syntax; the adapter now emits `FORMAT JSONEachRow {}` (one row, all table defaults)
+- Updated datetime and date columns to expose `ActiveRecord::Type::DateTime`/`::Date`
+  (not the ActiveModel types): they respect `ActiveRecord.default_timezone`, and
+  Rails' time-zone-aware attribute machinery type-checks for them
+
+Internal:
+
+- Grew the Rails compatibility harness from ~2,200 to ~4,500 vendored upstream Active
+  Record tests (scoping, autosave, migrations, nested attributes, serialized
+  attributes, enums, dirty tracking, timestamps, batches, query cache, delegated
+  types, instrumentation, and two dozen more suites), each skip documented with the
+  dialect truth behind it
+- Isolated the harness subprocess in a pid-suffixed ClickHouse database so concurrent
+  runs cannot collide
 
 # 0.1.0 (2026-07-15)
 
