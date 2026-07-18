@@ -1161,6 +1161,25 @@ its 1900-01-01 floor, probed live), and JsonAttributeTest's three (NULL
 payloads on the adapter's non-nullable-by-default DDL; raw UPDATE without
 WHERE). No adapter changes. Harness: 4,218 runs / 345 skips.
 
+**Phase 6 (cont.) — batches plus five attribute/identity corpora.** *(landed —
+Iteration 38)* Vendored six suites (216 runs). `batches_test.rb` (116 runs,
+find_each/in_batches/BatchEnumerator) needs only four skips: two
+`query_count_tally` (the mutation path's per-batch COUNT probe), the
+whole-table DELETE regex (mutation WHERE clauses render unqualified column
+names — the ALTER DELETE grammar has no table-qualified references), and the
+unique-cursor check (`add_index` makes data-skipping indexes, never UNIQUE).
+`normalized_attribute_test`, `secure_password_test`, and `signed_id_test`
+pass untouched — has_secure_password and signed_id just work.
+`multiparameter_attributes_test` skips five: four are ledger #23 made visible
+(writes encode UTC, so Time.local round-trips keep the wall clock but lose
+the zone) plus one `no_time_type`. `cache_key_test` skips three under a new
+`no_raw_timestamp_string` anchor: RowBinary type-casts at the wire, so
+`updated_at_before_type_cast` is already a Time, not the raw string
+cache_version's no-cast fast path expects. One flake-by-design skip added
+after the full gate: SecurePasswordTest's constant-time assertion (0.5s
+wall-clock tolerance) is load-sensitive under the harness. No adapter
+changes. Harness: 4,434 runs / 358 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

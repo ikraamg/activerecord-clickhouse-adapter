@@ -635,3 +635,50 @@ JsonAttributeTest:
   # standalone UPDATE statement at all.
   test_invalid_json_can_be_updated: >-
     raw UPDATE without WHERE is invalid — mutations require a WHERE clause
+
+# batches corpus (Iteration 38).
+EachTest:
+  # Batched update_all/delete_all go through the mutation path, which emits its
+  # COUNT(*) affected-rows probe per batch — two extra queries per batch.
+  test_in_batches_update_all_affect_all_records: *query_count_tally
+  test_in_batches_touch_all_affect_all_records: *query_count_tally
+  # Mutation WHERE clauses render unqualified column names (the ALTER DELETE
+  # grammar has no table-qualified references), so upstream's qualified-name
+  # regex never matches the emitted DELETE.
+  test_in_batches_no_subqueries_for_whole_tables_batching: >-
+    mutation WHERE clauses render unqualified columns; the qualified-name regex
+    cannot match
+  # add_index creates a data-skipping index, never a UNIQUE constraint, so the
+  # batching cursor's uniqueness check refuses the indexed column.
+  test_in_batches_with_custom_columns_raises_when_non_unique_columns: *no_unique_indexes
+
+# multiparameter / cache_key corpora (Iteration 38).
+MultiParameterAttributeTest:
+  # Datetime writes always encode UTC (ledger #23) and reads follow
+  # default_timezone (:utc here), so a Time.local round-trip keeps its wall
+  # clock but loses its zone — upstream stores and reads local time.
+  test_multiparameter_attributes_on_time: &writes_encode_utc >-
+    datetime writes encode UTC; Time.local round-trips come back UTC with the
+    same wall clock
+  test_multiparameter_attributes_on_time_will_ignore_hour_if_missing: *writes_encode_utc
+  test_multiparameter_attributes_on_time_with_empty_seconds: *writes_encode_utc
+  test_multiparameter_attributes_on_time_with_time_zone_aware_attributes_false: *writes_encode_utc
+  test_multiparameter_attributes_setting_time_attribute: *no_time_type
+
+SecurePasswordTest:
+  # Asserts two bcrypt-timed authenticate_by calls differ by < 0.5s of wall
+  # clock; passes in isolation but flakes under full-harness load (seen live:
+  # 0.511s delta). Timing tests don't belong in a shared-box gate.
+  test_authenticate_by_takes_the_same_amount_of_time_regardless_of_whether_record_is_found: >-
+    wall-clock timing assertion is load-sensitive under the full harness
+
+ActiveRecord::CacheKeyTest:
+  # cache_version's no-cast fast path needs updated_at_before_type_cast to be
+  # the database's raw string; this adapter type-casts at the wire (RowBinary),
+  # so the raw value is already a Time and Rails falls back to calling
+  # updated_at.
+  test_cache_version_is_the_same_when_it_comes_from_the_DB_or_from_the_user: &no_raw_timestamp_string >-
+    reads type-cast at the wire — before_type_cast is a Time, not the raw
+    database string the cache_version fast path expects
+  test_cache_version_does_not_truncate_zeros_when_timestamp_ends_in_zeros: *no_raw_timestamp_string
+  test_cache_version_does_NOT_call_updated_at_when_value_is_from_the_database: *no_raw_timestamp_string

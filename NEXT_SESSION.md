@@ -1,16 +1,18 @@
-# Iteration 38: 0.2.0 readiness sweep, core cutover PR, or the next corpus
+# Iteration 39: 0.2.0 readiness sweep, core cutover PR, or the next corpus
 
-> Status at handoff: Iteration 37 landed thirteen corpora (194 runs, 10 new
-> skips): query_cache (ported clean_up_connection_handler; no row locks, no
-> rollback, no lock_thread pinning) and twelve type/relation suites — nine of
-> them (boolean, date, numeric_data, null_relation, excluding, column_alias,
-> dup, clone, sanitize) pass untouched. Binary encoding tags, the DateTime64
-> 1900 range floor, and NULLs on non-nullable-by-default DDL are the honest
-> skips. Iteration 36 before it landed store/secure_token/counter_cache, the
-> runnable examples/olap_on_rails.rb tour, and root-caused the double-summary
-> flake (two concurrent full gates — the harness database is now pid-suffixed
-> and dropped at_exit). Harness: 4,218 runs / 345 skips. Gem suite 534 green,
-> rubocop zero.
+> Status at handoff: Iteration 38 landed batches (116 runs — find_each and
+> in_batches fully work; four dialect skips) plus multiparameter, normalized
+> attribute, secure_password, signed_id, and cache_key. normalized_attribute,
+> secure_password, and signed_id pass untouched. New seams documented:
+> mutation WHERE clauses render unqualified columns, writes-encode-UTC makes
+> Time.local round-trips come back UTC, and RowBinary wire-casting means
+> before_type_cast is never the raw database string (cache_version fast
+> path). SecurePasswordTest's constant-time assertion is skipped as
+> load-sensitive (0.5s wall-clock tolerance under a busy harness).
+> Iterations 36–37 before it: store/secure_token/counter_cache + query_cache
+> + twelve type/relation suites, the runnable examples/olap_on_rails.rb tour,
+> and the pid-suffixed harness database that ended the double-summary flake.
+> Harness: 4,434 runs / 358 skips. Gem suite 534 green, rubocop zero.
 
 ## Scope
 
@@ -23,10 +25,10 @@ Pick one (value order):
    breaking-ish), and draft the CHANGELOG. Release only when Ikraam says so.
 2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-3. **Next corpus:** remaining unvendored suites worth mining — `batches_test`
-   (find_each/in_batches, 1,132 lines, high consumer value),
-   `multiparameter_attributes_test`, `normalized_attribute_test`,
-   `secure_password_test`, `signed_id_test`, or `cache_key_test`.
+3. **Next corpus:** remaining unvendored suites worth mining —
+   `delegated_type_test`, `readonly_test`, `touch_later_test`,
+   `attributes_test`, `annotate_test`, `filter_attributes_test`, or the
+   result/instrumentation pair (`result_test`, `instrumentation_test`).
 
 ## Watch out for (carried forward)
 
@@ -110,4 +112,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 39.
+read/write path was touched, this file rewritten for Iteration 40.
