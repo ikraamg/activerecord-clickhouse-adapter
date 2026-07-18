@@ -82,6 +82,35 @@ RSpec.describe "ClickHouse DDL fidelity" do
     end
   end
 
+  # Rails' composite-key convention: primary_key: as an array of column names.
+  # ClickHouse takes it as a PRIMARY KEY tuple and infers ORDER BY from it
+  # (probed live: ORDER BY may be omitted when PRIMARY KEY is given).
+  describe "Rails-style composite primary_key arrays" do
+    before do
+      connection.create_table("ddl_composite_probe", primary_key: %w[region code], force: true) do |t|
+        t.string :region
+        t.integer :code
+      end
+    end
+
+    after { connection.drop_table("ddl_composite_probe", if_exists: true) }
+
+    it "renders the array as a PRIMARY KEY tuple" do
+      expect(server_key("primary_key")).to eq("region, code")
+    end
+
+    it "lets the server infer the sorting key from the primary key" do
+      expect(server_key("sorting_key")).to eq("region, code")
+    end
+
+    def server_key(kind)
+      connection.select_value(<<~SQL.squish)
+        SELECT #{kind} FROM system.tables
+        WHERE database = currentDatabase() AND name = 'ddl_composite_probe'
+      SQL
+    end
+  end
+
   describe "schema dumping" do
     subject(:dump) do
       ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection_pool, StringIO.new).string

@@ -14,7 +14,9 @@ module ActiveRecord
           # With id: false Rails' own primary_key: kwarg is inert, so the DSL reuses the
           # ClickHouse clause name; renamed here because super would swallow it. With an
           # explicit id column the Rails meaning (pk column name) wins untouched.
-          options[:primary_key_clause] = options.delete(:primary_key) if id == false && options.key?(:primary_key)
+          if id == false && options.key?(:primary_key)
+            options[:primary_key_clause] = primary_key_clause(options.delete(:primary_key))
+          end
           super
         end
 
@@ -602,6 +604,15 @@ module ActiveRecord
           end
           settings.delete(:index_granularity) if settings[:index_granularity] == 8192
           settings.presence
+        end
+
+        # Rails' composite-key convention passes primary_key: as an array of column
+        # names; ClickHouse takes them as a PRIMARY KEY tuple (and infers ORDER BY
+        # from it, probed live). A string is a raw clause and passes untouched.
+        def primary_key_clause(value)
+          return value unless value.is_a?(Array)
+
+          "(#{value.map { |column| quote_column_name(column) }.join(", ")})"
         end
 
         def internal_table_options(table_name, options)

@@ -117,7 +117,8 @@ module ActiveRecord
         end
 
         def add_table_options!(create_sql, o)
-          if o.engine.include?("MergeTree") && o.order.nil?
+          # PRIMARY KEY alone is enough: the server infers ORDER BY from it (probed live).
+          if o.engine.include?("MergeTree") && o.order.nil? && o.primary_key_clause.nil?
             raise ArgumentError, "#{o.engine} tables require order: (the sorting key); use order: \"tuple()\" for none"
           end
 

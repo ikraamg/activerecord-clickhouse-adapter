@@ -76,6 +76,27 @@ RSpec.describe "ClickHouse schema statements" do
     expect(described_type_for("Date")).to be_a(ActiveRecord::Type::Date)
   end
 
+  # Rails' class-level valid_type? (used by AdapterTest and schema tooling) reads
+  # native_database_types off the adapter class, not the instance.
+  it "exposes native_database_types on the adapter class" do
+    expect(connection.class.valid_type?(:string)).to be(true)
+  end
+
+  it "rejects unknown migration types at the adapter class level" do
+    expect(connection.class.valid_type?(:foobar)).to be(false)
+  end
+
+  # The abstract TYPE_MAP pattern-matches generic SQL names, so ClickHouse-only
+  # shapes degrade to unfrozen Type::Value (probed live: Nullable(String), UUID,
+  # Bool) and Tuple(String, Int64) even false-matches Integer.
+  it "looks up wrapped ClickHouse sql types through the ClickHouse parser" do
+    expect(connection.lookup_cast_type("Nullable(String)")).to be_a(ActiveModel::Type::String)
+  end
+
+  it "keeps looked-up cast types Ractor-shareable (frozen)" do
+    expect(Ractor.shareable?(connection.lookup_cast_type("Map(String, String)"))).to be(true)
+  end
+
   def described_type_for(type_string)
     ActiveRecord::ConnectionAdapters::ClickHouse::Types.active_record_cast_type(type_string)
   end
