@@ -739,3 +739,100 @@ ActiveRecord::InstrumentationTest:
     the mutation path's COUNT probe adds events and ALTER UPDATE/DELETE report
     zero written rows, so the per-event affected_rows sequence differs
   test_payload_affected_rows_cascade: *mutation_event_stream
+
+# adapter-surface corpora (Iteration 41): adapter, database_statements,
+# primary_keys, types, table_metadata, statement_invalid.
+# ClickHouse has no foreign-key constraints, so InvalidForeignKey can never be
+# raised; the class's fixture declaration (fk_test_has_pk) also fails in
+# before_setup, ahead of any per-test skip.
+ActiveRecord::AdapterForeignKeyTest:
+  "*": >-
+    no foreign-key constraints in ClickHouse — InvalidForeignKey translation is
+    untestable, and the class's fk fixtures fail to load before per-test skips fire
+
+# Upstream runs these on a transactionally-pinned connection whose lock_thread
+# makes @lock a real Monitor; this harness is transactionless (no pinning), so
+# the shared connection keeps Rails' default NullLock and multithreaded use of
+# one instance is outside the adapter contract.
+ActiveRecord::AdapterThreadSafetyTest:
+  "test_#active?_is_synchronized": &no_pinned_connection_lock >-
+    no transactional-test pinning here, so the shared connection keeps Rails'
+    default NullLock — single-connection multithreading is only locked upstream
+    because fixtures pin the connection with lock_thread
+  "test_#verify!_is_synchronized": *no_pinned_connection_lock
+
+ActiveRecord::AdapterTest:
+  # Raw-SQL inserts can't know the new row's id (no last-insert-id, no
+  # RETURNING) — only the prefetched client-side pk is knowable.
+  test_select_all_insert_update_delete_with_binds: *no_last_insert_id
+  test_select_all_insert_update_delete_with_casted_binds: *no_last_insert_id
+  # Instance-level valid_type? deliberately answers true for everything: column
+  # types the dumper can't map to AR symbols (Array, Map, Tuple, ...) dump
+  # verbatim, so every introspected type is valid by construction.
+  test_invalid_column: >-
+    instance valid_type? is deliberately always true — verbatim-dumpable types
+    (Array, Map, Tuple) must count as valid for the schema dumper
+  # type_to_sql raises ArgumentError for unmapped symbols by design: a typo'd
+  # migration type should fail at DDL-build time, not reach the server.
+  test_type_to_sql_returns_a_String_for_unmapped_types: >-
+    type_to_sql deliberately raises for unmapped types instead of passing them
+    through — DDL typos should fail client-side
+  test_not_null_violations_are_translated_to_specific_exception: >-
+    ClickHouse fills omitted non-nullable columns with type defaults; a NOT NULL
+    violation cannot occur on insert
+  test_value_limit_violations_are_translated_to_specific_exception: *string_limit_not_persisted
+  test_uniqueness_violations_are_translated_to_specific_exception: *no_unique_indexes
+  # Probed live (2026-07-18): VALUES parsing wraps Int64 overflow silently —
+  # 9223372036854775808 comes back as -9223372036854775808, no error raised.
+  test_numeric_value_out_of_ranges_are_translated_to_specific_exception: >-
+    ClickHouse wraps integer overflow in VALUES parsing instead of raising
+    (probed live), so there is no RangeError to translate
+  # 25.8 parses raw UPDATE as a lightweight update and refuses it without the
+  # _block_number setting; the adapter's own mutation path uses ALTER UPDATE.
+  "test_#exec_query_queries_return_an_ActiveRecord::Result_with_affected_rows": >-
+    raw UPDATE statements are lightweight updates 25.8 rejects
+    (NOT_IMPLEMENTED); the adapter's mutation path rides ALTER UPDATE instead
+
+DatabaseStatementsTest:
+  test_insert_should_return_the_inserted_id: *no_last_insert_id
+  test_create_should_return_the_inserted_id: *no_last_insert_id
+  test_exec_insert: *no_last_insert_id
+
+PrimaryKeysTest:
+  # reset_primary_key re-derives the pk from connection.primary_keys, which
+  # deliberately reports none (ledger #7) — and the reset would strip the
+  # harness-assigned pk from the model for every later test.
+  test_auto_detect_primary_key_from_schema: &no_reported_primary_key >-
+    reset_primary_key re-derives from connection.primary_keys, which the
+    adapter deliberately leaves empty (ledger #7)
+  test_primary_key_prefix: *no_reported_primary_key
+  test_primary_key_returns_value_if_it_exists: *no_reported_primary_key
+  test_reconfiguring_primary_key_resets_composite_primary_key: *no_reported_primary_key
+  test_primary_key_update_with_custom_key_name: *key_column_update
+  test_create_without_primary_key_no_extra_query: *query_count_tally
+
+CompositePrimaryKeyTest:
+  test_composite_primary_key: *no_reported_primary_key
+  test_composite_primary_key_with_reserved_words: *no_reported_primary_key
+  test_composite_primary_key_out_of_order: *no_reported_primary_key
+  test_derives_composite_primary_key: *no_reported_primary_key
+  # The dumper writes the sorting key as order:, never primary_key: — PRIMARY
+  # KEY is an index prefix in ClickHouse, not identity (ledger).
+  test_collectly_dump_composite_primary_key: &pk_dumps_as_order >-
+    the dumper writes the sorting key as order:, never primary_key: — PRIMARY
+    KEY is an index prefix, not identity (ledger)
+  test_dumping_composite_primary_key_out_of_order: *pk_dumps_as_order
+
+PrimaryKeyAnyTypeTest:
+  test_any_type_primary_key: *no_reported_primary_key
+  test_schema_dump_primary_key_includes_type_and_options: *pk_dumps_as_order
+
+PrimaryKeyIntegerNilDefaultTest:
+  test_schema_dump_primary_key_integer_with_default_nil: *pk_dumps_as_order
+  test_schema_dump_primary_key_bigint_with_default_nil: *pk_dumps_as_order
+
+PrimaryKeyWithAutoIncrementTest:
+  # No autoincrement in ClickHouse; the in-test AutoIncrement model derives its
+  # pk from connection.primary_keys (ledger #7), so ids never populate.
+  test_primary_key_with_integer: *no_reported_primary_key
+  test_primary_key_with_bigint: *no_reported_primary_key

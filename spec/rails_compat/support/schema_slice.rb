@@ -15,6 +15,7 @@ module ARCompat
     # (upstream declares them id: false).
     PRIMARY_KEYS = {
       "countries" => :country_id,
+      "mixed_case_monkeys" => :monkeyID,
       # ReservedWordTest's scratch tables exist only between its setup/teardown, so
       # the table_exists? guard below never sees them — the manifest entry wins.
       "distinct" => :id,
@@ -53,14 +54,14 @@ module ARCompat
       cpk_reviews cpk_tags customer_carriers customers
       dashboards departments developers
       developers_projects
-      dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays
+      dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays events
       eyes faces families
       family_trees friendships funny_jokes goofy_string_id guitars hardbacks having hotels humans
       images interests iris
       integer_limits invoices jobs jobs_pool keyboards kitchens lessons lessons_students line_items lions liquid
       magazines mateys
       member_details member_types members memberships mentors messages mice
-      minimalistics minivans molecules movies nodes non_primary_keys
+      minimalistics minivans mixed_case_monkeys molecules movies nodes non_primary_keys
       numeric_data orders organizations overloaded_types owners parrots parrots_pirates parrots_treasures people
       peoples_treasures pets pets_treasures pirates price_estimates prisoners product_types products professors
       program_offerings programs recipes recipients
@@ -616,6 +617,13 @@ module ARCompat
         t.datetime :updated_at, null: true
       end
 
+      # Upstream gives title limit: 5 for ValueTooLong tests; ClickHouse String is
+      # unbounded, so the limit is DDL-inert here (string_limit seam).
+      connection.create_table :events, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :title, null: true
+      end
+
       connection.create_table :entrants, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name
@@ -846,6 +854,11 @@ module ARCompat
         t.string :name, null: true
         t.string :speedometer_id, null: true
         t.string :color, null: true
+      end
+
+      connection.create_table :mixed_case_monkeys, force: true, order: "monkeyID" do |t|
+        t.integer :monkeyID, limit: 8
+        t.integer :fleaCount, limit: 8, null: true
       end
 
       connection.create_table :numeric_data, force: true, order: "id" do |t|

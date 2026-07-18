@@ -88,3 +88,9 @@ Refresh with:
 - cases/serialization_test.rb
 - cases/json_serialization_test.rb
 - cases/yaml_serialization_test.rb
+- cases/adapter_test.rb
+- cases/database_statements_test.rb
+- cases/primary_keys_test.rb
+- cases/types_test.rb
+- cases/table_metadata_test.rb
+- cases/statement_invalid_test.rb

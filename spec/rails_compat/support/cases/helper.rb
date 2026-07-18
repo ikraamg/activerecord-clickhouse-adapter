@@ -119,7 +119,11 @@ module ARCompat
 
       id = options.fetch(:id, :bigint)
       pk = options.fetch(:primary_key) { ActiveRecord::Base.get_primary_key(table_name.to_s.singularize) }
-      return super(table_name, order: "tuple()", **options, &block) if id == false || pk.is_a?(Array)
+      # An explicit composite primary_key: renders as a PRIMARY KEY tuple and the
+      # server infers ORDER BY from it — forcing order: "tuple()" here would make
+      # the primary key longer than the sorting key (BAD_ARGUMENTS, probed live).
+      return super if pk.is_a?(Array)
+      return super(table_name, order: "tuple()", **options, &block) if id == false
 
       id_type = id == :primary_key ? :bigint : id
       super(table_name, **options.merge(id: false, order: quote_column_name(pk))) do |t|
@@ -229,6 +233,25 @@ module ARCompat
     # String columns take DEFAULT expressions like every other ClickHouse type.
     def supports_text_column_with_default?
       true
+    end
+
+    # Upstream's connection-poking helpers skip outright for adapters they don't
+    # know how to drive (support/adapter_helper.rb has no HTTP branch), so the
+    # AdapterConnectionTest suite self-skips here exactly as it would upstream.
+    def raw_transaction_open?(_connection)
+      skip("raw_transaction_open? unsupported")
+    end
+
+    def remote_disconnect(_connection)
+      skip("remote_disconnect unsupported")
+    end
+
+    def connection_id_from_server(_connection)
+      skip("connection_id_from_server unsupported")
+    end
+
+    def kill_connection_from_server(_connection_id, _pool = nil)
+      skip("kill_connection_from_server unsupported")
     end
 
     # Upstream delegates these capability predicates to the live connection so the
