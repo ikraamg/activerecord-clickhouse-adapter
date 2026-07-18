@@ -1224,6 +1224,42 @@ NOT_AN_AGGREGATE, same seam as CalculationsTest). validations, view,
 relation, and json_serialization pass untouched. Harness: 4,792 runs /
 369 skips.
 
+**Phase 6 (cont.) — adapter-surface corpora + two adapter fixes.** *(landed —
+Iteration 41)* Vendored six suites: `adapter_test`, `database_statements_test`,
+`primary_keys_test`, `statement_invalid_test`, `table_metadata_test`, and
+`types_test` (plus upstream's `support/connection_helper.rb`). Three adapter
+changes fell out. (1) `lookup_cast_type` now routes through the gem's type
+parser instead of the abstract TYPE_MAP, whose SQL-name pattern-matching
+degrades ClickHouse shapes (`Nullable(...)`, `UUID`, `Map`) to `Type::Value`
+and even false-matches `Tuple(String, Int64)` as Integer; results are frozen so
+lookups stay Ractor-shareable like Rails' own maps (adapter_test's Ractor
+assertions). A class-level `native_database_types` joins it — Rails'
+class-level `valid_type?` reads it off the class. (2) `create_table` with a
+composite `primary_key:` array now renders a quoted PRIMARY KEY tuple, and a
+PRIMARY KEY clause alone satisfies the sorting-key requirement — the server
+infers ORDER BY from it (probed live; forcing `order: "tuple()"` alongside
+raises BAD_ARGUMENTS, primary key longer than sorting key). (3) `disconnect!`
+now closes the raw HTTP connection *inside* `@lock` (the postgresql adapter's
+own pattern): queries hold the lock for their whole round-trip, so closing
+after release let a queued query start its read on a dying socket — surfaced
+live as IOError in the vendored AdapterThreadSafetyTest, pinned by a
+deterministic spec asserting `mon_owned?` at close time. Skips, all honest
+seams: AdapterForeignKeyTest retires class-level (no FK constraints — the
+InvalidForeignKey path is untestable and its fixtures fail in before_setup);
+AdapterThreadSafetyTest's two synchronization probes (this harness is
+transactionless, so no lock_thread pinning ever installs a real Monitor —
+upstream only passes because fixtures pin); AdapterConnectionTest self-skips
+through upstream's own seam (`remote_disconnect`/`raw_transaction_open?`/
+`connection_id_from_server` helpers skip for adapters they can't drive, now
+mirrored in ARCompat::AdapterHelper); plus dump-shape and no-reported-pk
+entries on the primary-keys suites. One authored-spec honesty fix: `active?`
+is false on a virgin connection (connecting is lazy), so the connection spec
+verifies first — was seed-order dependent. Environment note: a concurrent
+harness run from a second session saturated the container (225,000% CPU,
+Docker VM death #4); the pid-suffixed harness database contained the data
+blast radius, but the box does not survive two full gates. Harness: 4,918
+runs / 429 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

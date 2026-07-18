@@ -1,25 +1,29 @@
-# Iteration 41: the next corpus batch, 0.2.0 cut, or core cutover PR
+# Iteration 42: the next corpus batch, 0.2.0 cut, or core cutover PR
 
-> Status at handoff: Iteration 40 landed nine corpora (strict_loading,
-> validations, view, unsafe_raw_sql, reserved_word, relation, serialization,
-> json_serialization, yaml_serialization) and one adapter fix that fell out:
-> `ALTER TABLE … UPDATE` mutations now carry relation annotations (the update
-> visitor was missing `maybe_visit o.comment`). Harness plumbing grew
-> upstream's TEST_ROOT/FIXTURES_ROOT constants + `create_fixtures`, a
-> fake-adapter exemption in `clean_up_connection_handler`, and manifest-first
-> primary-key assignment (ReservedWordTest's scratch tables exist only inside
-> its own setup/teardown). Five skips, all known seams. Harness: see PLAN.md
-> §6 for exact counts. Gem suite 539 green, rubocop zero.
+> Status at handoff: Iteration 41 landed six adapter-surface corpora
+> (adapter, database_statements, primary_keys, statement_invalid,
+> table_metadata, types) and three adapter fixes that fell out:
+> `lookup_cast_type` now routes through the gem's type parser (frozen results,
+> Ractor-shareable) instead of the abstract TYPE_MAP that degraded ClickHouse
+> shapes; composite `primary_key:` arrays render as a PRIMARY KEY tuple and a
+> PRIMARY KEY clause alone satisfies the sorting-key requirement (server
+> infers ORDER BY, probed live); and `disconnect!` closes the raw connection
+> inside `@lock` (postgresql-adapter pattern — a queued query was starting
+> its HTTP read on a dying socket, seen live as IOError). Skips: FK suite
+> retires class-level (no FK constraints), thread-safety probes (no
+> lock_thread pinning in a transactionless harness), AdapterConnectionTest
+> self-skips via upstream's own remote_disconnect/raw_transaction_open?
+> seam. Harness: 4,918 runs / 429 skips. Gem suite 546 green, rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
 1. **Next corpus batch:** remaining unvendored suites worth mining —
-   `timestamp_test`, `dirty_test`, `reflection_test`, `inheritance_test`,
-   `aggregations_test`, `defaults_test`. The ratchet has been quiet on adapter
-   bugs (Iteration 40's annotation fix was the only one in ~9 suites), so
-   expect mostly-pass + a handful of dialect skips per suite.
+   `attribute_decorators_test`, `store_test`, `secure_token_test`,
+   `counter_cache_test`, `quoting_test`, `sanitize_test`, `batches_test`.
+   The ratchet keeps finding real bugs (three adapter fixes in Iteration 41),
+   so keep pulling.
 2. **Cut 0.2.0:** CHANGELOG is drafted, benchmarks re-run (BASELINE.md
    2026-07-18), README audited, the OLAP example ships and is guard-spec'd.
    Ikraam's bar — "pretty much drop-in for OLAP + an example" — reads as met;
@@ -32,27 +36,30 @@ Pick one (value order):
 
 ## Watch out for (carried forward)
 
-- **One driver only (violated in Iterations 36 and 40):** before any long
-  gate, check for running rspec/ruby processes (`pgrep -f "rspec|rails_compat"`).
-  The pid-suffixed harness database contains the blast radius, but the
-  authored suite still owns `ar_clickhouse_test` exclusively — concurrent
-  full gates will still collide there (spine tables, TRMNL corpus).
-- The Docker VM has died mid-run three times (container OOM, daemon gone,
-  zombie container — ECONNRESET storm mid-gate). Recovery: quit Docker
-  Desktop fully, relaunch, wait for the daemon, then `docker compose down &&
-  up -d --wait`. Check `docker ps` before debugging the adapter.
+- **One driver only (violated again in Iteration 41):** a second session's
+  full harness ran concurrently with this one's — the container hit
+  225,000% CPU, then the Docker VM died (fourth time). The pid-suffixed
+  harness database contains the *data* blast radius, but the box does not
+  survive two concurrent full gates. Before any long gate:
+  `pgrep -f "rspec|rails_compat"`.
+- Docker VM recovery: `docker desktop restart` (or quit + relaunch), wait for
+  the daemon, then `docker compose down && up -d --wait`, then give the port
+  proxy ~10s. Right after recovery, expect a few ConnectionNotEstablished
+  connect-timeout flakes in the first harness run — rerun the affected suites
+  before suspecting the adapter.
 - The harness database is `ar_clickhouse_compat_<pid>`, created in
   cases/helper.rb and dropped at_exit. `CLICKHOUSE_COMPAT_DATABASE` still
   overrides it (CI uses the default). Killed runs leave a debris database
   until the next `docker compose down`.
+- `active?` is honestly false on a virgin connection (connecting is lazy);
+  call `verify!` first if a spec needs an established connection.
 - Manifest skips fire in `after_setup` (ledger #57); a class whose *own
   setup/teardown* breaks needs a suite-level `"*"` overlay entry instead
-  (ledger #59 — two exist: AttributeMethodsTest in skips_edge.yml,
-  SchemaDumperDefaultsTest in skips.yml).
+  (three exist: AttributeMethodsTest in skips_edge.yml,
+  SchemaDumperDefaultsTest and AdapterForeignKeyTest in skips.yml).
 - The tmpfs container fills up after several consecutive full-harness runs
   (NOT_ENOUGH_SPACE, code 243). `docker compose down && docker compose up -d
-  --wait` is the factory reset. After the reset, give the port proxy ~10s —
-  a run started the instant `--wait` returns has ECONNRESET'd every query once.
+  --wait` is the factory reset.
 - `clean_up_connection_handler` must never strip pools whose db_config
   adapter is "fake" — Contact/ContactSti are load-time fixtures shared by the
   serialization suites, and this harness is one process (Iteration 40).
@@ -104,4 +111,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 42.
+read/write path was touched, this file rewritten for Iteration 43.

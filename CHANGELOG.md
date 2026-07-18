@@ -23,6 +23,16 @@ Added:
 
 Fixed:
 
+- Fixed `lookup_cast_type` to resolve ClickHouse type names through the adapter's own
+  parser: the abstract TYPE_MAP degraded `Nullable(...)`, `UUID`, `Bool`, and `Map`
+  to bare `Type::Value` and even matched `Tuple(String, Int64)` as Integer; results
+  are frozen so lookups stay Ractor-shareable
+- Fixed `create_table` with a composite `primary_key:` array to render a quoted
+  `PRIMARY KEY (a, b)` tuple; a PRIMARY KEY clause alone now satisfies the
+  sorting-key requirement (the server infers ORDER BY from it)
+- Fixed `disconnect!` to close the raw HTTP connection while still holding the
+  adapter lock (the postgresql adapter's pattern) — closing after release let a
+  concurrently queued query start its read on a dying socket
 - Fixed datetime DDL bounds: precision past 9 (nanoseconds, ClickHouse's maximum) now
   raises `ArgumentError` at migration time instead of a server error, and an explicit
   `precision: nil` maps to the second-precision base `DateTime` (a bare `t.datetime`
