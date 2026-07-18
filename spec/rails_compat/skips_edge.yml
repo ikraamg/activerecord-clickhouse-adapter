@@ -32,3 +32,14 @@ ActiveRecord::BindParameterTest:
     the pinned tests drive it with a hash payload
   test_logs_unnamed_binds: *event_object_payload
   test_logs_binds_after_type_cast: *event_object_payload
+SanitizeTest:
+  test_bind_chars: &mb_chars_removed >-
+    Rails main removed ActiveSupport::Multibyte::Chars (String#mb_chars), which the
+    pinned tests call
+  test_sanitize_sql_array_handles_string_interpolation: *mb_chars_removed
+  test_sanitize_sql_array_handles_bind_variables: *mb_chars_removed
+QueryCacheTest:
+  test_cache_does_not_raise_exceptions: &subscriber_call_api >-
+    Rails main's notifications fan out to subscriber classes via #call; the pinned
+    test's hand-rolled LogSubscriber subclass predates that contract
+  test_cache_notifications_can_be_overridden: *subscriber_call_api
