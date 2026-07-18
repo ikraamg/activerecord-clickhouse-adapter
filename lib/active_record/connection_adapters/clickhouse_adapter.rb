@@ -55,10 +55,15 @@ module ActiveRecord
         cluster ? " ON CLUSTER #{quote_table_name(cluster)}" : ""
       end
 
+      # Closing inside @lock keeps a queued query (which holds the lock for its whole
+      # HTTP round-trip) from starting on a socket that dies mid-read — the postgresql
+      # adapter's own disconnect! pattern.
       def disconnect!
-        super
-        @raw_connection&.close
-        @raw_connection = nil
+        @lock.synchronize do
+          super
+          @raw_connection&.close
+          @raw_connection = nil
+        end
       end
 
       def supports_explain? = true
