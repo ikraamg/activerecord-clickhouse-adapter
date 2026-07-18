@@ -27,9 +27,12 @@ module ActiveRecord
           when "Decimal", "Decimal32", "Decimal64", "Decimal128", "Decimal256"
             precision, scale = node.args.grep(Integer)
             ActiveModel::Type::Decimal.new(precision: precision, scale: scale)
-          when "Date", "Date32" then ActiveModel::Type::Date.new
-          when "DateTime" then ActiveModel::Type::DateTime.new
-          when "DateTime64" then ActiveModel::Type::DateTime.new(precision: node.args.first)
+          # The Active Record (not ActiveModel) temporal types: they respect
+          # ActiveRecord.default_timezone, and Rails' time-zone-aware attribute
+          # machinery type-checks for them.
+          when "Date", "Date32" then ActiveRecord::Type::Date.new
+          when "DateTime" then ActiveRecord::Type::DateTime.new
+          when "DateTime64" then ActiveRecord::Type::DateTime.new(precision: node.args.first)
           when "Bool" then ActiveModel::Type::Boolean.new
           when "String", "FixedString", "Enum8", "Enum16", "UUID", "IPv4", "IPv6" then ActiveModel::Type::String.new
           when "JSON" then ActiveRecord::Type::Json.new

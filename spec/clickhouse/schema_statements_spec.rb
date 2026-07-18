@@ -62,6 +62,21 @@ RSpec.describe "ClickHouse schema statements" do
     expect(tag.type).to eq(:string)
   end
 
+  # Rails' time-zone-aware attribute machinery type-checks for the Active Record
+  # datetime type (it carries default_timezone awareness the ActiveModel one lacks).
+  it "exposes datetime columns as ActiveRecord::Type::DateTime" do
+    ts = connection.columns("schema_probe").find { |column| column.name == "ts" }
+    expect(ts.fetch_cast_type(connection)).to be_a(ActiveRecord::Type::DateTime)
+  end
+
+  it "exposes date columns as ActiveRecord::Type::Date" do
+    expect(described_type_for("Date")).to be_a(ActiveRecord::Type::Date)
+  end
+
+  def described_type_for(type_string)
+    ActiveRecord::ConnectionAdapters::ClickHouse::Types.active_record_cast_type(type_string)
+  end
+
   it "captures DEFAULT expressions as default_function" do
     ts = connection.columns("schema_probe").find { |column| column.name == "ts" }
     expect(ts.default_function).to eq("now64(3)")
