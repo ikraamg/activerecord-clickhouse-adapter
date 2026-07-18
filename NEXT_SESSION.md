@@ -1,29 +1,32 @@
-# Iteration 42: the next corpus batch, 0.2.0 cut, or core cutover PR
+# Iteration 43: the next corpus batch, 0.2.0 cut, or core cutover PR
 
-> Status at handoff: Iteration 41 landed six adapter-surface corpora
-> (adapter, database_statements, primary_keys, statement_invalid,
-> table_metadata, types) and three adapter fixes that fell out:
-> `lookup_cast_type` now routes through the gem's type parser (frozen results,
-> Ractor-shareable) instead of the abstract TYPE_MAP that degraded ClickHouse
-> shapes; composite `primary_key:` arrays render as a PRIMARY KEY tuple and a
-> PRIMARY KEY clause alone satisfies the sorting-key requirement (server
-> infers ORDER BY, probed live); and `disconnect!` closes the raw connection
-> inside `@lock` (postgresql-adapter pattern — a queued query was starting
-> its HTTP read on a dying socket, seen live as IOError). Skips: FK suite
-> retires class-level (no FK constraints), thread-safety probes (no
-> lock_thread pinning in a transactionless harness), AdapterConnectionTest
-> self-skips via upstream's own remote_disconnect/raw_transaction_open?
-> seam. Harness: 4,918 runs / 429 skips. Gem suite 546 green, rubocop zero.
+> Status at handoff: Iteration 42 landed sixteen small corpora (callbacks,
+> core, modules, mixin, i18n, finder_respond_to, suppressor,
+> asynchronous_queries, query_logs, collection_cache_key,
+> marshal_serialization, forbidden_attributes_protection, token_for,
+> primary_class, inherited, active_record) — thirteen with zero skips. One
+> adapter fix: SQL carrying invalid UTF-8 now drops to binary in
+> hoist_trailing_comments instead of dying in its regexes (ClickHouse is
+> byte-safe; probed live for literals and backtick identifiers). Seven
+> skips: two pretty_print (no TIME type), one QueryLogs (upstream aliases
+> with a quoted string — ClickHouse syntax error regardless of encoding),
+> four Marshal historical dumps (no honest ClickHouse 6.1/7.1 dump exists).
+> One skips_edge entry: Rails main's Arel::Table.new is keyword-only now.
+> Harness: 5,125 runs / 437 skips. Gem suite 547 green, rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
-1. **Next corpus batch:** remaining unvendored suites worth mining —
-   `attribute_decorators_test`, `store_test`, `secure_token_test`,
-   `counter_cache_test`, `quoting_test`, `sanitize_test`, `batches_test`.
-   The ratchet keeps finding real bugs (three adapter fixes in Iteration 41),
-   so keep pulling.
+1. **Next corpus batch:** the unvendored remainder is now mostly
+   multi-connection/pool machinery (connection_pool, connection_management,
+   pooled_connections, reaper, database_selector, multiple_db,
+   connection_handling), transactions (transactions, transaction_callbacks,
+   transaction_isolation — expect wholesale no-transactions skips), and
+   infrastructure (fixtures_test, migrator_test, query_cache siblings,
+   log_subscriber, structured_event_subscriber, explain_subscriber,
+   locking_test, associations_test). Diminishing corpus returns are near:
+   triage each for whether an honest run is even meaningful before vendoring.
 2. **Cut 0.2.0:** CHANGELOG is drafted, benchmarks re-run (BASELINE.md
    2026-07-18), README audited, the OLAP example ships and is guard-spec'd.
    Ikraam's bar — "pretty much drop-in for OLAP + an example" — reads as met;
@@ -111,4 +114,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 43.
+read/write path was touched, this file rewritten for Iteration 44.

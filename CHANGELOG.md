@@ -33,6 +33,9 @@ Fixed:
 - Fixed `disconnect!` to close the raw HTTP connection while still holding the
   adapter lock (the postgresql adapter's pattern) — closing after release let a
   concurrently queued query start its read on a dying socket
+- Fixed SQL containing invalid UTF-8 bytes to reach the server instead of raising
+  `ArgumentError` client-side (ClickHouse strings are byte sequences; the server
+  accepts raw bytes in literals and backtick identifiers)
 - Fixed datetime DDL bounds: precision past 9 (nanoseconds, ClickHouse's maximum) now
   raises `ArgumentError` at migration time instead of a server error, and an explicit
   `precision: nil` maps to the second-precision base `DateTime` (a bare `t.datetime`

@@ -1260,6 +1260,34 @@ Docker VM death #4); the pid-suffixed harness database contained the data
 blast radius, but the box does not survive two full gates. Harness: 4,918
 runs / 429 skips.
 
+**Phase 6 (cont.) — sixteen small corpora + encoding fix.** *(landed —
+Iteration 42)* Vendored sixteen suites in two batches: callbacks, core,
+modules, mixin, i18n, finder_respond_to, suppressor; then
+asynchronous_queries, query_logs, collection_cache_key,
+marshal_serialization, forbidden_attributes_protection, token_for,
+primary_class, inherited, active_record. Thirteen pass with zero skips —
+callbacks, async queries (including the executor-type matrix), token_for,
+forbidden-attributes protection, and query logs were already exact. One
+adapter fix fell out: SQL carrying invalid UTF-8 bytes died in
+`hoist_trailing_comments`' regexes (ArgumentError) before reaching the
+server; it now drops to binary first, because ClickHouse strings are byte
+sequences and the patterns are pure ASCII (upstream QueryLogsTest proves
+every non-Postgres adapter accepts such SQL). Live probe recorded: the
+server accepts raw invalid bytes in string literals and backtick
+identifiers, but upstream's own probe (`SELECT 1 AS 'x'`) aliases with a
+*quoted string*, which ClickHouse rejects as a syntax error regardless of
+encoding — that one test skips on dialect, with the adapter-side behavior
+spec'd in query_comments_spec. Other skips: CoreTest's two pretty_print
+expectations (bonus_time is a :time column upstream, date part coerced to
+2000-01-01; no TIME type here so the fixture's real date shows through) and
+MarshalSerializationTest's four historical-dump replays (upstream ships
+per-adapter dumps recorded on Rails 6.1/7.1 — no honest ClickHouse dump can
+exist). Slice grew notifications + mixins tables and collections/products/
+variants/mixins fixtures. One edge-overlay entry: Rails main refactored
+`Arel::Table.new` to a keyword `name:` argument (b1650993b0), which the
+pinned table_metadata test constructs positionally. Harness: 5,125 runs /
+437 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per
