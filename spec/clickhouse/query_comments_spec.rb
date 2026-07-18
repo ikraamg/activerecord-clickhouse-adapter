@@ -35,4 +35,11 @@ RSpec.describe "query log comments" do
     connection.execute("INSERT INTO comment_probes (value) VALUES (4)")
     expect(connection.select_value("SELECT value FROM comment_probes /*application='Trmnl'*/")).to eq(4)
   end
+
+  # ClickHouse strings are byte sequences, so SQL carrying invalid UTF-8 must reach
+  # the server instead of dying in the comment-hoisting regex (upstream QueryLogs
+  # proves every non-Postgres adapter accepts it).
+  it "sends SQL containing invalid UTF-8 bytes to the server" do
+    expect(connection.select_value("SELECT 1 AS `\xFF`")).to eq(1)
+  end
 end

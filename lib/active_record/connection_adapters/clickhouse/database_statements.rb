@@ -303,6 +303,10 @@ module ActiveRecord
         # rejects trailing comments (probed 2026-07-13), so sqlcommenter tags appended
         # by Rails' QueryLogs are hoisted to the front of INSERT statements.
         def hoist_trailing_comments(sql)
+          # ClickHouse strings are byte sequences; SQL carrying invalid UTF-8 must reach
+          # the server rather than die in these regexes, so it drops to binary (the
+          # patterns are pure ASCII and match byte-wise).
+          sql = sql.b unless sql.valid_encoding?
           return sql unless INSERT_STATEMENT.match?(sql)
 
           comments = sql[TRAILING_COMMENTS]
