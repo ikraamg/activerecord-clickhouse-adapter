@@ -98,9 +98,22 @@ module ActiveRecord
 
       def native_database_types = NATIVE_DATABASE_TYPES
 
+      # Rails' class-level valid_type? reads this off the class.
+      def self.native_database_types = NATIVE_DATABASE_TYPES
+
       # Column types the dumper can't map to AR symbols (Array, Map, Tuple, ...) are
       # dumped verbatim, so every introspected type is valid by construction.
       def valid_type?(_type) = true
+
+      # The abstract TYPE_MAP pattern-matches generic SQL names: ClickHouse-only
+      # shapes (Nullable(...), UUID, Bool, Map, ...) degrade to unfrozen
+      # Type::Value there, and Tuple(String, Int64) even false-matches Integer.
+      # Frozen so lookups stay Ractor-shareable like Rails' own type maps.
+      def lookup_cast_type(sql_type) # :nodoc:
+        ClickHouse::Types.active_record_cast_type(sql_type).freeze
+      rescue ClickHouse::TypeParser::Error
+        super
+      end
 
       def create_schema_dumper(options) # :nodoc:
         ClickHouse::SchemaDumper.create(self, options)
