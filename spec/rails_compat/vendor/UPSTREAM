@@ -71,3 +71,11 @@ Vendored from rails/rails tag v8.1.3 (activerecord/test/), byte-exact:
 
 Refresh with:
   git -C ../rails-main show v8.1.3:activerecord/test/<path> > vendor/<path>
+- cases/delegated_type_test.rb
+- cases/readonly_test.rb
+- cases/touch_later_test.rb
+- cases/attributes_test.rb
+- cases/annotate_test.rb
+- cases/filter_attributes_test.rb
+- cases/result_test.rb
+- cases/instrumentation_test.rb

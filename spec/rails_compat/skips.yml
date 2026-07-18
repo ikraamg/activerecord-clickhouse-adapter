@@ -682,3 +682,28 @@ ActiveRecord::CacheKeyTest:
     database string the cache_version fast path expects
   test_cache_version_does_not_truncate_zeros_when_timestamp_ends_in_zeros: *no_raw_timestamp_string
   test_cache_version_does_NOT_call_updated_at_when_value_is_from_the_database: *no_raw_timestamp_string
+
+# attributes corpus (Iteration 39).
+ActiveRecord::CustomPropertiesTest:
+  # ClickHouse String is unbounded — a :string limit never reaches the DDL, so
+  # introspection cannot hand it back.
+  test_overloaded_properties_with_limit: &string_limit_not_persisted >-
+    ClickHouse String has no length; string limits don't survive the round trip
+    through DDL and introspection
+  test_overloaded_default_but_keeping_its_own_type: *string_limit_not_persisted
+  test_immutable_strings_by_default_retains_limit_information: *string_limit_not_persisted
+  # Model.last on an anonymous class with no primary key: no implicit order
+  # column to fall back to (sorting-key ordering needs the model registered).
+  test_attributes_not_backed_by_database_columns_properly_interact_with_mutation_and_dirty: >-
+    anonymous model without a primary key has no implicit order column for
+    Model.last
+
+# instrumentation corpus (Iteration 39).
+ActiveRecord::InstrumentationTest:
+  # update_all/delete_all run as ALTER mutations: the COUNT(*) affected-rows
+  # probe adds an event, and the ALTER statement itself writes no rows on the
+  # wire — the per-event affected_rows tally can't line up with upstream's.
+  test_payload_affected_rows: &mutation_event_stream >-
+    the mutation path's COUNT probe adds events and ALTER UPDATE/DELETE report
+    zero written rows, so the per-event affected_rows sequence differs
+  test_payload_affected_rows_cascade: *mutation_event_stream

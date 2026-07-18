@@ -1,34 +1,34 @@
-# Iteration 39: 0.2.0 readiness sweep, core cutover PR, or the next corpus
+# Iteration 40: 0.2.0 readiness sweep, core cutover PR, or the next corpus
 
-> Status at handoff: Iteration 38 landed batches (116 runs — find_each and
-> in_batches fully work; four dialect skips) plus multiparameter, normalized
-> attribute, secure_password, signed_id, and cache_key. normalized_attribute,
-> secure_password, and signed_id pass untouched. New seams documented:
-> mutation WHERE clauses render unqualified columns, writes-encode-UTC makes
-> Time.local round-trips come back UTC, and RowBinary wire-casting means
-> before_type_cast is never the raw database string (cache_version fast
-> path). SecurePasswordTest's constant-time assertion is skipped as
-> load-sensitive (0.5s wall-clock tolerance under a busy harness).
-> Iterations 36–37 before it: store/secure_token/counter_cache + query_cache
-> + twelve type/relation suites, the runnable examples/olap_on_rails.rb tour,
-> and the pid-suffixed harness database that ended the double-summary flake.
-> Harness: 4,434 runs / 358 skips. Gem suite 534 green, rubocop zero.
+> Status at handoff: Iteration 39 landed eight corpora (delegated_type,
+> readonly, touch_later, attributes, annotate, filter_attributes, result,
+> instrumentation — 126 runs) and two adapter fixes that fell out of them:
+> `payload[:affected_rows]` now carries the server's written_rows on every
+> wire query and insert_stream, and datetime/date columns expose
+> `ActiveRecord::Type::DateTime`/`::Date` (the AR types respect
+> default_timezone and Rails' tz-aware machinery type-checks for them). Six
+> skips, including a new `string_limit_not_persisted` anchor (ClickHouse
+> String is unbounded — :string limits never reach DDL). delegated_type,
+> readonly, annotate, filter_attributes, and result pass untouched.
+> Harness: 4,560 runs / 365 skips. Gem suite 538 green, rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
 1. **0.2.0 readiness sweep:** Ikraam's bar for 0.2.0 is "pretty much drop-in
-   for OLAP, with an example for OLAP-on-Rails". The example now exists. Sweep
+   for OLAP, with an example for OLAP-on-Rails". The example exists and the
+   corpus ratchet has been quiet on adapter bugs for three iterations. Sweep
    the remaining drop-in gaps: walk README claims against reality, re-run
-   benchmarks, decide the version bump (datetime default-precision change is
-   breaking-ish), and draft the CHANGELOG. Release only when Ikraam says so.
+   benchmarks (the read path grew the affected_rows payload write —
+   presumably free, but prove it), decide the version bump (datetime
+   default-precision change is breaking-ish), and draft the CHANGELOG.
+   Release only when Ikraam says so.
 2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    the published 0.1.0; push the branch and open the PR when Ikraam wants it.
 3. **Next corpus:** remaining unvendored suites worth mining —
-   `delegated_type_test`, `readonly_test`, `touch_later_test`,
-   `attributes_test`, `annotate_test`, `filter_attributes_test`, or the
-   result/instrumentation pair (`result_test`, `instrumentation_test`).
+   `timestamp_test`, `dirty_test`, `reflection_test`, `inheritance_test`,
+   `aggregations_test`, or `defaults_test`.
 
 ## Watch out for (carried forward)
 
@@ -38,7 +38,12 @@ Pick one (value order):
   processes. The pid-suffixed harness database contains the blast radius, but
   the authored suite still owns `ar_clickhouse_test` exclusively — concurrent
   full gates will still collide there (spine tables, TRMNL corpus).
-- The harness database is now `ar_clickhouse_compat_<pid>`, created in
+- The Docker VM has now died mid-run three times (container OOM, daemon gone,
+  and in Iteration 39 a zombie container the daemon couldn't kill — ECONNRESET
+  storm mid-gate). Recovery: quit Docker Desktop fully, relaunch, wait for the
+  daemon, then `docker compose down && up -d --wait`. Check `docker ps` before
+  debugging the adapter.
+- The harness database is `ar_clickhouse_compat_<pid>`, created in
   cases/helper.rb and dropped at_exit. `CLICKHOUSE_COMPAT_DATABASE` still
   overrides it (CI uses the default). Killed runs leave a debris database
   until the next `docker compose down`.
@@ -78,9 +83,6 @@ Pick one (value order):
   it".
 - LowCardinality ROLLUP totals: keyed `""` on 25.8, `nil` on 26.6 — callers
   (and specs) must check both until 25.8 support ends.
-- The Docker VM has died mid-run twice now (container OOM once, daemon gone
-  once). If a run dies with "Connection refused"/ECONNRESET, check `docker ps`
-  before debugging the adapter.
 - `change_column` builds MODIFY COLUMN from scratch: type wrappers come from
   options, not the previous column — omitting `null: true` on a nullable column
   makes it non-nullable (same replace-the-definition semantics as Rails).
@@ -112,4 +114,4 @@ Pick one (value order):
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 40.
+read/write path was touched, this file rewritten for Iteration 41.

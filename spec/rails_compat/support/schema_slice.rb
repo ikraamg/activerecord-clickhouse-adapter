@@ -33,7 +33,7 @@ module ARCompat
     # Tables the harness must reset between tests beyond the fixture tables, which
     # reload every test anyway (decision #15: truncation, no transactions to roll back).
     TABLES = %w[
-      1_need_quoting accounts admin_users aircraft articles articles_magazines articles_tags
+      1_need_quoting accounts admin_accounts admin_users aircraft articles articles_magazines articles_tags
       attachments audit_logs author_addresses
       author_favorites authors
       auto_id_tests CamelCase binaries birds book_identifiers books booleans bulbs cake_designers carriers cars carts
@@ -55,9 +55,9 @@ module ARCompat
       magazines mateys
       member_details member_types members memberships mentors messages mice
       minimalistics minivans molecules movies nodes non_primary_keys
-      numeric_data orders organizations owners parrots parrots_pirates parrots_treasures people
+      numeric_data orders organizations overloaded_types owners parrots parrots_pirates parrots_treasures people
       peoples_treasures pets pets_treasures pirates price_estimates prisoners product_types products professors
-      program_offerings programs recipes
+      program_offerings programs recipes recipients
       post_comments_counts posts projects ratings readers records references rooms
       sections seminars sessions
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
@@ -85,6 +85,11 @@ module ARCompat
         t.string :status, null: true
         t.integer "a" * 64, null: true
         t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :admin_accounts, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
       end
 
       connection.create_table :admin_users, force: true, order: "id" do |t|
@@ -886,6 +891,17 @@ module ARCompat
         t.string :name, null: true
       end
 
+      connection.create_table :overloaded_types, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.float :overloaded_float, default: 500, null: true
+        t.float :unoverloaded_float, null: true
+        t.string :overloaded_string_with_limit, limit: 255, null: true
+        t.string :string_with_default, default: "the original default", null: true
+        t.string :inferred_string, limit: 255, null: true
+        t.datetime :starts_at, null: true
+        t.datetime :ends_at, null: true
+      end
+
       connection.create_table :owners, force: true, order: "owner_id" do |t|
         t.integer :owner_id, limit: 8
         t.string :name, null: true
@@ -1239,6 +1255,12 @@ module ARCompat
         t.integer :id, limit: 8
         t.string :name, null: true
         t.integer :taggings_count, null: true, default: 0
+      end
+
+      connection.create_table :recipients, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :message_id, limit: 8, null: true
+        t.string :email_address, null: true
       end
 
       connection.create_table :recipes, force: true, order: "id" do |t|

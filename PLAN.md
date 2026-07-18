@@ -1180,6 +1180,26 @@ after the full gate: SecurePasswordTest's constant-time assertion (0.5s
 wall-clock tolerance) is load-sensitive under the harness. No adapter
 changes. Harness: 4,434 runs / 358 skips.
 
+**Phase 6 (cont.) — eight corpora plus two adapter fixes.** *(landed —
+Iteration 39)* Vendored `delegated_type`, `readonly`, `touch_later`,
+`attributes`, `annotate`, `filter_attributes`, `result`, and `instrumentation`
+(126 runs). Two adapter changes fell out, both TDD'd live. First:
+`notification_payload[:affected_rows]` is now populated from the server
+summary's written_rows on every wire query and on insert_stream — upstream's
+InstrumentationTest exposed that we left Rails' default 0 in place. Second:
+datetime/date columns now expose `ActiveRecord::Type::DateTime`/`::Date`
+(not the ActiveModel ones): they respect `ActiveRecord.default_timezone`, and
+Rails' time-zone-aware attribute machinery type-checks for them
+(CustomPropertiesTest#test_time_zone_aware_attribute). Six skips: three
+`string_limit_not_persisted` (ClickHouse String is unbounded, so :string
+limits never reach DDL and can't round-trip), one anonymous-model
+`Model.last`, and InstrumentationTest's two affected-rows tallies (the
+mutation COUNT probe adds events and ALTER UPDATE/DELETE write no rows, so
+the per-event sequence can't match upstream's). delegated_type, readonly,
+annotate, filter_attributes, and result pass untouched. Mid-iteration the
+Docker Desktop VM wedged (zombie container, daemon EOF) — a full Docker
+restart plus compose reset recovered it. Harness: 4,560 runs / 365 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per
