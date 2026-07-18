@@ -66,7 +66,10 @@ RSpec.describe "ClickHouse schema statements" do
   # datetime type (it carries default_timezone awareness the ActiveModel one lacks).
   it "exposes datetime columns as ActiveRecord::Type::DateTime" do
     ts = connection.columns("schema_probe").find { |column| column.name == "ts" }
-    expect(ts.fetch_cast_type(connection)).to be_a(ActiveRecord::Type::DateTime)
+    # 8.1's public seam is fetch_cast_type(connection); Rails main removed it
+    # and made cast_type a public reader instead.
+    cast_type = ts.respond_to?(:fetch_cast_type) ? ts.fetch_cast_type(connection) : ts.cast_type
+    expect(cast_type).to be_a(ActiveRecord::Type::DateTime)
   end
 
   it "exposes date columns as ActiveRecord::Type::Date" do
