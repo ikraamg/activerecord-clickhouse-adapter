@@ -193,5 +193,17 @@ RSpec.describe "ClickHouse CRUD semantics" do
     it "returns the number of matching rows for an ordered relation" do
       expect(model.order(:device_id).update_all(status: "swept")).to eq(2)
     end
+
+    it "carries relation annotations into the mutation SQL" do
+      annotated = capture_statements { model.annotate("audit trail").update_all(status: "done") }
+      expect(annotated).to include(match(%r{ALTER TABLE.*UPDATE.*/\* audit trail \*/}))
+    end
+  end
+
+  def capture_statements(&work)
+    statements = []
+    callback = ->(event) { statements << event.payload[:sql] }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record", &work)
+    statements
   end
 end

@@ -83,7 +83,8 @@ module Arel
           collector = visit o.relation, collector
           collector << " UPDATE "
           collector = inject_join o.values, collector, ", "
-          collect_update_wheres(o, collector)
+          collector = collect_update_wheres(o, collector)
+          maybe_visit o.comment, collector
         end
       end
 
