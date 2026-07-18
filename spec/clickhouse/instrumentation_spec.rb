@@ -44,4 +44,14 @@ RSpec.describe "ClickHouse instrumentation" do
     payload = payload_for { connection.select_value("SELECT 1") }
     expect(payload[:clickhouse][:query_id]).to match(/\A[0-9a-f-]{36}\z/)
   end
+
+  it "reports written rows as the payload's affected_rows on inserts" do
+    payload = payload_for { connection.execute("INSERT INTO instr_probe VALUES (1001), (1002)") }
+    expect(payload[:affected_rows]).to eq(2)
+  end
+
+  it "reports zero affected_rows on selects" do
+    payload = payload_for { connection.select_value("SELECT count() FROM instr_probe") }
+    expect(payload[:affected_rows]).to eq(0)
+  end
 end

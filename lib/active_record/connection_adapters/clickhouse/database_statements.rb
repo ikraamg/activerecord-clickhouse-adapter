@@ -261,6 +261,7 @@ module ActiveRecord
             with_raw_connection do |raw_connection|
               result = raw_connection.execute_stream(sql, lines)
               verified!
+              notification_payload[:affected_rows] = result.written_rows
               notification_payload[:clickhouse] = result.stats
               result.written_rows
             end
@@ -329,6 +330,7 @@ module ActiveRecord
           result = raw_connection.execute(sql, params: params)
           verified!
           if notification_payload
+            notification_payload[:affected_rows] = result.written_rows
             notification_payload[:row_count] = result.rows.size
             notification_payload[:clickhouse] = result.stats
           end
