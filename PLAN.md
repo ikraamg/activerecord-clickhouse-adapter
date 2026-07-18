@@ -1200,6 +1200,30 @@ annotate, filter_attributes, and result pass untouched. Mid-iteration the
 Docker Desktop VM wedged (zombie container, daemon EOF) — a full Docker
 restart plus compose reset recovered it. Harness: 4,560 runs / 365 skips.
 
+**Phase 6 (cont.) — nine loading/serialization corpora plus an annotation
+fix.** *(landed — Iteration 40)* Vendored `strict_loading`, `validations`,
+`view`, `unsafe_raw_sql`, `reserved_word`, `relation`, `serialization`,
+`json_serialization`, and `yaml_serialization`. One adapter fix fell out:
+`ALTER TABLE … UPDATE` mutations now carry relation annotations
+(`maybe_visit o.comment` was missing from the update visitor — AnnotateTest
+had covered SELECTs only). Harness plumbing: upstream's `TEST_ROOT`/
+`FIXTURES_ROOT` path constants and the `create_fixtures` helper now exist
+(ReservedWordTest and YamlSerializationTest reach static fixture files
+through them); `clean_up_connection_handler` no longer strips fake-adapter
+pools (Contact/ContactSti are load-time fixtures — upstream rebuilds them
+per file-process, this harness is one process); and the `PRIMARY_KEYS`
+manifest now wins outright over the lazy `table_exists?` guess, because
+ReservedWordTest's scratch tables (`distinct`, `group`, `select`, `values`)
+exist only inside its setup/teardown. Five skips, each a known seam:
+StrictLoadingTest's n_plus_one has_many case (unordered loads are
+part-dependent — `.last` may hit a nil FK that belongs_to short-circuits),
+an anonymous-model find (ledger #7), COLLATE (upstream's per-adapter
+collation map has no entry, and ClickHouse takes a string literal anyway),
+and `SELECT t.* GROUP BY t.id` (no functional-dependency GROUP BY —
+NOT_AN_AGGREGATE, same seam as CalculationsTest). validations, view,
+relation, and json_serialization pass untouched. Harness: 4,792 runs /
+369 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

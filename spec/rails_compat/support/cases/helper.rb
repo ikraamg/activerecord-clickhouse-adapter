@@ -17,6 +17,11 @@ require "active_support/testing/stream"
 require "net/http"
 require "yaml"
 
+# Upstream's test/config.rb path constants; suites reach static fixtures through
+# them (ReservedWordTest's reserved_words/, YamlSerializationTest's YAML corpus).
+TEST_ROOT = File.expand_path("../../vendor", __dir__)
+FIXTURES_ROOT = "#{TEST_ROOT}/fixtures".freeze
+
 module ARCompat
   # skips.yml is the ratchet for the pinned corpus (vendor/UPSTREAM) on released
   # Rails and the ClickHouse floor. Overlays quarantine drift when that same corpus
@@ -291,6 +296,12 @@ module ActiveRecord
       ActiveRecord::Base.adapter_class.quote_table_name(name)
     end
 
+    # Upstream test/cases/test_case.rb; suites load extra fixture sets mid-test.
+    def create_fixtures(*fixture_set_names)
+      ActiveRecord::FixtureSet.create_fixtures(ActiveRecord::TestCase.fixture_paths, fixture_set_names,
+                                               fixture_class_names)
+    end
+
     # Upstream test/cases/test_case.rb; query-cache tests establish throwaway named
     # connections and expect teardown to strip every non-default role/pool again.
     def clean_up_connection_handler
@@ -298,6 +309,10 @@ module ActiveRecord
       handler.instance_variable_get(:@connection_name_to_pool_manager).each do |owner, pool_manager|
         pool_manager.role_names.each do |role_name|
           next if role_name == ActiveRecord::Base.default_role && owner == "ActiveRecord::Base"
+          # Contact/ContactSti's fake-adapter pools are load-time fixtures. Upstream
+          # rebuilds them per file-process; this harness is one process, so stripping
+          # them here would break every later serialization suite.
+          next if pool_manager.pool_configs(role_name).all? { |pool_config| pool_config.db_config.adapter == "fake" }
 
           pool_manager.remove_role(role_name)
         end

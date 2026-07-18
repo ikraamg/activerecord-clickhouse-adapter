@@ -15,6 +15,12 @@ module ARCompat
     # (upstream declares them id: false).
     PRIMARY_KEYS = {
       "countries" => :country_id,
+      # ReservedWordTest's scratch tables exist only between its setup/teardown, so
+      # the table_exists? guard below never sees them — the manifest entry wins.
+      "distinct" => :id,
+      "group" => :id,
+      "select" => :id,
+      "values" => :as,
       "countries_treaties" => %i[country_id treaty_id],
       "courses_professors" => nil,
       "cpk_order_tags" => %i[order_id tag_id],
@@ -59,11 +65,11 @@ module ARCompat
       peoples_treasures pets pets_treasures pirates price_estimates prisoners product_types products professors
       program_offerings programs recipes recipients
       post_comments_counts posts projects ratings readers records references rooms
-      sections seminars sessions
+      sections seminars serialized_posts sessions
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
       ship_parts ships shop_accounts sinks
-      speedometers sponsors squeaks string_key_objects students subscribers subscriptions
-      taggings tags tasks tires topics
+      speedometers sponsors squeaks strict_zines string_key_objects students subscribers subscriptions
+      taggings tags tasks test_with_keyword_column_name tires topics
       toooooooooooooooooooooooooooooooooo_long_table_names toys traffic_lights translations treasures treaties
       trees tuning_pegs variants vegetables
       user_comments_counts users warehouse-things weirds wheels zines
@@ -1109,6 +1115,12 @@ module ARCompat
         t.string :name, null: true
       end
 
+      connection.create_table :serialized_posts, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :author_id, limit: 8, null: true
+        t.string :title
+      end
+
       connection.create_table :sessions, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.date :start_date, null: true
@@ -1221,6 +1233,11 @@ module ARCompat
         t.string :name, null: true
       end
 
+      connection.create_table :strict_zines, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :title, null: true
+      end
+
       connection.create_table :string_key_objects, force: true, id: false, order: "id" do |t|
         t.string :id, null: false
         t.string :name, null: true
@@ -1273,6 +1290,11 @@ module ARCompat
         t.integer :id, limit: 8
         t.datetime :starting, null: true
         t.datetime :ending, null: true
+      end
+
+      connection.create_table :test_with_keyword_column_name, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :desc, null: true
       end
 
       connection.create_table :translations, force: true, order: "id" do |t|
@@ -1407,12 +1429,14 @@ module ARCompat
       ActiveRecord::Base.descendants.each do |model|
         next if model.abstract_class? ? model.table_name.nil? : model != model.base_class
         next if model.name.nil? || model.name.include?("HABTM") # auto-generated join models
-        next if model.primary_key || !model.table_exists?
 
+        # The manifest wins outright: models over not-yet-created scratch tables
+        # (ReservedWordTest) lazily guess primary_key "id", so a nil check would
+        # never reach their entries.
         if PRIMARY_KEYS.key?(model.table_name)
           explicit = PRIMARY_KEYS.fetch(model.table_name)
           model.primary_key = explicit if explicit
-        elsif model.column_names.include?("id")
+        elsif model.primary_key.nil? && model.table_exists? && model.column_names.include?("id")
           model.primary_key = "id"
         end
       end

@@ -79,3 +79,12 @@ Refresh with:
 - cases/filter_attributes_test.rb
 - cases/result_test.rb
 - cases/instrumentation_test.rb
+- cases/strict_loading_test.rb
+- cases/validations_test.rb
+- cases/view_test.rb
+- cases/unsafe_raw_sql_test.rb
+- cases/reserved_word_test.rb
+- cases/relation_test.rb
+- cases/serialization_test.rb
+- cases/json_serialization_test.rb
+- cases/yaml_serialization_test.rb

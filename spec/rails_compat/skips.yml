@@ -698,6 +698,38 @@ ActiveRecord::CustomPropertiesTest:
     anonymous model without a primary key has no implicit order column for
     Model.last
 
+# strict_loading / serialization / raw-sql / yaml corpora (Iteration 40).
+StrictLoadingTest:
+  # Without ORDER BY, ClickHouse returns rows in part-dependent order, so
+  # `developer.projects.last` on the loaded association may be a fixture project
+  # whose firm_id is nil — and belongs_to short-circuits a nil foreign key
+  # without the lazy load the assertion needs. Passes or fails by part layout.
+  test_strict_loading_n_plus_one_only_mode_with_has_many: >-
+    unordered association load order is part-dependent; .last may hit a nil
+    foreign key, which belongs_to short-circuits without a violation
+
+SerializationTest:
+  # Class.new(ActiveRecord::Base) over books: the adapter reports no primary key
+  # (ledger #7), so find() raises UnknownPrimaryKey — the schema-slice pk
+  # assignment only reaches named models loaded at boot.
+  test_read_attribute_for_serialization_with_format_after_find: >-
+    in-test anonymous model needs a server-reported primary key; the adapter
+    deliberately reports none (ledger #7)
+
+UnsafeRawSqlTest:
+  # Upstream picks the collation name from a per-adapter map that has no
+  # ClickHouse entry, rendering COLLATE "" — and ClickHouse wants a
+  # string-literal collation ('en'), not a double-quoted identifier, anyway.
+  "test_order:_allows_valid_arguments_with_COLLATE": >-
+    upstream's per-adapter collation map has no ClickHouse entry, and ClickHouse
+    takes COLLATE 'literal', not a double-quoted identifier
+
+YamlSerializationTest:
+  # ClickHouse has no functional-dependency GROUP BY (same seam as
+  # CalculationsTest): SELECT authors.* GROUP BY authors.id is NOT_AN_AGGREGATE.
+  test_types_of_virtual_columns_are_not_changed_on_round_trip: >-
+    SELECT t.* GROUP BY t.id needs functional-dependency GROUP BY (NOT_AN_AGGREGATE)
+
 # instrumentation corpus (Iteration 39).
 ActiveRecord::InstrumentationTest:
   # update_all/delete_all run as ALTER mutations: the COUNT(*) affected-rows

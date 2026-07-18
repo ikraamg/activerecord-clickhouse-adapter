@@ -1,48 +1,46 @@
-# Iteration 40: 0.2.0 readiness sweep, core cutover PR, or the next corpus
+# Iteration 41: the next corpus batch, 0.2.0 cut, or core cutover PR
 
-> Status at handoff: Iteration 39 landed eight corpora (delegated_type,
-> readonly, touch_later, attributes, annotate, filter_attributes, result,
-> instrumentation — 126 runs) and two adapter fixes that fell out of them:
-> `payload[:affected_rows]` now carries the server's written_rows on every
-> wire query and insert_stream, and datetime/date columns expose
-> `ActiveRecord::Type::DateTime`/`::Date` (the AR types respect
-> default_timezone and Rails' tz-aware machinery type-checks for them). Six
-> skips, including a new `string_limit_not_persisted` anchor (ClickHouse
-> String is unbounded — :string limits never reach DDL). delegated_type,
-> readonly, annotate, filter_attributes, and result pass untouched.
-> Harness: 4,560 runs / 365 skips. Gem suite 538 green, rubocop zero.
+> Status at handoff: Iteration 40 landed nine corpora (strict_loading,
+> validations, view, unsafe_raw_sql, reserved_word, relation, serialization,
+> json_serialization, yaml_serialization) and one adapter fix that fell out:
+> `ALTER TABLE … UPDATE` mutations now carry relation annotations (the update
+> visitor was missing `maybe_visit o.comment`). Harness plumbing grew
+> upstream's TEST_ROOT/FIXTURES_ROOT constants + `create_fixtures`, a
+> fake-adapter exemption in `clean_up_connection_handler`, and manifest-first
+> primary-key assignment (ReservedWordTest's scratch tables exist only inside
+> its own setup/teardown). Five skips, all known seams. Harness: see PLAN.md
+> §6 for exact counts. Gem suite 539 green, rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
-1. **0.2.0 readiness sweep:** Ikraam's bar for 0.2.0 is "pretty much drop-in
-   for OLAP, with an example for OLAP-on-Rails". The example exists and the
-   corpus ratchet has been quiet on adapter bugs for three iterations. Sweep
-   the remaining drop-in gaps: walk README claims against reality, re-run
-   benchmarks (the read path grew the affected_rows payload write —
-   presumably free, but prove it), decide the version bump (datetime
-   default-precision change is breaking-ish), and draft the CHANGELOG.
-   Release only when Ikraam says so.
-2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
-   the published 0.1.0; push the branch and open the PR when Ikraam wants it.
-3. **Next corpus:** remaining unvendored suites worth mining —
+1. **Next corpus batch:** remaining unvendored suites worth mining —
    `timestamp_test`, `dirty_test`, `reflection_test`, `inheritance_test`,
-   `aggregations_test`, or `defaults_test`.
+   `aggregations_test`, `defaults_test`. The ratchet has been quiet on adapter
+   bugs (Iteration 40's annotation fix was the only one in ~9 suites), so
+   expect mostly-pass + a handful of dialect skips per suite.
+2. **Cut 0.2.0:** CHANGELOG is drafted, benchmarks re-run (BASELINE.md
+   2026-07-18), README audited, the OLAP example ships and is guard-spec'd.
+   Ikraam's bar — "pretty much drop-in for OLAP + an example" — reads as met;
+   the release itself waits for his explicit go (version bump decision:
+   datetime default-precision change is breaking-ish, suggesting 0.2.0 over
+   0.1.1).
+3. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
+   published 0.1.0; push the branch and open the PR when Ikraam wants it.
+   Re-pin to 0.2.0 first if that ships.
 
 ## Watch out for (carried forward)
 
-- **One driver only (violated in Iteration 36):** two agent sessions ran full
-  gates concurrently; the pid stamps + system.query_log proved it. Before any
-  long gate, `ls` the terminals folder / check for running rspec-ruby
-  processes. The pid-suffixed harness database contains the blast radius, but
-  the authored suite still owns `ar_clickhouse_test` exclusively — concurrent
+- **One driver only (violated in Iterations 36 and 40):** before any long
+  gate, check for running rspec/ruby processes (`pgrep -f "rspec|rails_compat"`).
+  The pid-suffixed harness database contains the blast radius, but the
+  authored suite still owns `ar_clickhouse_test` exclusively — concurrent
   full gates will still collide there (spine tables, TRMNL corpus).
-- The Docker VM has now died mid-run three times (container OOM, daemon gone,
-  and in Iteration 39 a zombie container the daemon couldn't kill — ECONNRESET
-  storm mid-gate). Recovery: quit Docker Desktop fully, relaunch, wait for the
-  daemon, then `docker compose down && up -d --wait`. Check `docker ps` before
-  debugging the adapter.
+- The Docker VM has died mid-run three times (container OOM, daemon gone,
+  zombie container — ECONNRESET storm mid-gate). Recovery: quit Docker
+  Desktop fully, relaunch, wait for the daemon, then `docker compose down &&
+  up -d --wait`. Check `docker ps` before debugging the adapter.
 - The harness database is `ar_clickhouse_compat_<pid>`, created in
   cases/helper.rb and dropped at_exit. `CLICKHOUSE_COMPAT_DATABASE` still
   overrides it (CI uses the default). Killed runs leave a debris database
@@ -55,46 +53,38 @@ Pick one (value order):
   (NOT_ENOUGH_SPACE, code 243). `docker compose down && docker compose up -d
   --wait` is the factory reset. After the reset, give the port proxy ~10s —
   a run started the instant `--wait` returns has ECONNRESET'd every query once.
+- `clean_up_connection_handler` must never strip pools whose db_config
+  adapter is "fake" — Contact/ContactSti are load-time fixtures shared by the
+  serialization suites, and this harness is one process (Iteration 40).
+- `PRIMARY_KEYS` in schema_slice.rb wins over the lazy `table_exists?` guess;
+  scratch-table models (ReservedWordTest) are only reachable through manifest
+  entries because their tables don't exist at boot.
 - `t.decimal precision: N` now emits `Decimal(N, 0)`; only a fully unbounded
-  decimal keeps `Decimal(38, 10)`. Consumer schema diffs of `Decimal(N, 10)` →
-  `Decimal(N, 0)` are this fix (the old shape was invalid for N < 10 anyway).
-- `t.datetime` now defaults to precision 6. Any consumer schema diff noise of
-  `DateTime64(3)` → `DateTime64(6)` is this, not a bug; explicit `precision: 3`
-  restores the old shape. And since Iteration 33, `precision: nil` (explicit)
-  means plain second-precision `DateTime` — schema dumps omit precision 6 and
-  write `precision: nil` for the plain type, per upstream convention.
-- `primary_keys` still returns `[]` by design (§5) — the migration corpus skip
-  for `test_removing_and_renaming_column_preserves_custom_primary_key` is the
-  visible cost. Open question for Ikraam below.
-- The vendored corpus is pinned to 8.1.3; against Rails main, drift in the test
-  *text* (not adapter behavior) goes in `skips_edge.yml`, which merges into the
-  manifest only when `ActiveRecord.gem_version >= 8.2.0.alpha`. Re-pin the
-  corpus when 8.2 ships and delete the file. (Latest entry: LogSubscriber#sql
-  takes an Event object on main — three bind_parameter logging tests.)
+  decimal keeps `Decimal(38, 10)`.
+- `t.datetime` defaults to precision 6; explicit `precision: nil` means plain
+  second-precision `DateTime` — schema dumps omit precision 6 and write
+  `precision: nil` for the plain type, per upstream convention.
+- `primary_keys` still returns `[]` by design (§5) — open question for Ikraam
+  below.
+- The vendored corpus is pinned to 8.1.3; against Rails main, drift in the
+  test *text* goes in `skips_edge.yml` (merged only when
+  `ActiveRecord.gem_version >= 8.2.0.alpha`). Re-pin when 8.2 ships and
+  delete the file.
 - Rails main runs need the edge bundle: `RAILS_SOURCE=edge BUNDLE_FROZEN=false
-  bundle install` re-resolves against `../rails-main` (all three path gems);
-  plain `bundle install` restores the release lock afterwards.
-- Narrowing to non-Nullable (via `change_column_null` *or* `change_column`)
-  refuses stored NULLs and rides a placeholder
-  `DEFAULT defaultValueOfTypeName(…)` it removes right after (§2) — 26.6
-  requires the in-statement DEFAULT, 25.8 tolerates it.
-- Never assert `getSetting('async_insert')` is false — 26.x flipped the server
-  default. Assert `system.settings.changed = 0` for "the adapter didn't touch
-  it".
-- LowCardinality ROLLUP totals: keyed `""` on 25.8, `nil` on 26.6 — callers
-  (and specs) must check both until 25.8 support ends.
-- `change_column` builds MODIFY COLUMN from scratch: type wrappers come from
-  options, not the previous column — omitting `null: true` on a nullable column
-  makes it non-nullable (same replace-the-definition semantics as Rails).
+  bundle install`; plain `bundle install` restores the release lock.
+- Narrowing to non-Nullable refuses stored NULLs and rides a placeholder
+  `DEFAULT defaultValueOfTypeName(…)` it removes right after (§2).
+- Never assert `getSetting('async_insert')` is false — 26.x flipped the
+  default. Assert `system.settings.changed = 0` instead.
+- LowCardinality ROLLUP totals: keyed `""` on 25.8, `nil` on 26.6 — check both.
+- `change_column` builds MODIFY COLUMN from scratch: omitting `null: true` on
+  a nullable column makes it non-nullable.
 - structure_load rewrites USER/PASSWORD inside CREATE DICTIONARY statements
-  with the loading connection's credentials — a dictionary authenticating as
-  someone else is not expressible yet.
-- The compose file runs an embedded Keeper (`spec/support/cluster/keeper.xml`);
-  a stale container predating Iteration 20 fails the on_cluster spec with
-  NO_ELEMENTS_IN_CONFIG.
-- HAVING resolves SELECT aliases first (§2); raw DML without WHERE is a syntax
-  error; raw `UPDATE t SET …` doesn't exist at all on 25.8 (mutations only) —
-  the migration corpus skip documents it.
+  with the loading connection's credentials.
+- The compose file runs an embedded Keeper; a stale container predating
+  Iteration 20 fails the on_cluster spec with NO_ELEMENTS_IN_CONFIG.
+- HAVING resolves SELECT aliases first (§2); raw DML without WHERE is a
+  syntax error; raw `UPDATE t SET …` doesn't exist on 25.8 (mutations only).
 - DateTime reads follow `default_timezone` (ledger #42); writes always encode
   UTC (ledger #23).
 - Rails' prefetch seam cannot populate one column of a composite primary key —
@@ -104,14 +94,14 @@ Pick one (value order):
 
 - Should `primary_keys(table)` report a single-column sorting key as the AR
   primary key? Today it returns `[]` (ledger: PRIMARY KEY is an index prefix,
-  not identity) and models declare `self.primary_key` explicitly. Inferring it
-  would make `connection.primary_key` and model pk detection "just work" for
-  id-keyed tables, but a table ordered by `created_at` would then claim a
-  timestamp as its pk — dangerous for update/delete targeting. Status quo is
-  the conservative call.
+  not identity) and models declare `self.primary_key` explicitly. Status quo
+  is the conservative call.
+- 0.2.0: ready to cut on request — CHANGELOG drafted, benchmarks fresh, OLAP
+  example guard-spec'd. Confirm the version number (datetime precision default
+  change argues for 0.2.0 over 0.1.1).
 
 ## Definition of done
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 41.
+read/write path was touched, this file rewritten for Iteration 42.
