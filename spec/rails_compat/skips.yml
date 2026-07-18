@@ -836,3 +836,32 @@ PrimaryKeyWithAutoIncrementTest:
   # pk from connection.primary_keys (ledger #7), so ids never populate.
   test_primary_key_with_integer: *no_reported_primary_key
   test_primary_key_with_bigint: *no_reported_primary_key
+
+# core/callbacks/modules/mixin/i18n/finder_respond_to/suppressor corpora
+# (Iteration 42). bonus_time is a :time column upstream (date part coerced to
+# 2000-01-01); ClickHouse has no TIME type so the slice stores it as datetime
+# and the fixture's real date shows through in inspect output.
+CoreTest:
+  test_pretty_print_persisted: *no_time_type
+  test_pretty_print_full: *no_time_type
+
+# query_logs / marshal_serialization corpora (Iteration 42).
+QueryLogsTest:
+  # The invalid-encoding bytes now reach the server (spec'd in
+  # query_comments_spec), but upstream's probe uses a single-quoted alias
+  # (SELECT 1 AS 'x'), which is MySQL/SQLite syntax — ClickHouse aliases are
+  # identifiers and the server answers SYNTAX_ERROR regardless of encoding.
+  test_invalid_encoding_query: >-
+    upstream's probe aliases with a quoted string (AS 'x'), which ClickHouse
+    rejects as a syntax error regardless of the encoding under test
+
+# Upstream ships per-adapter Marshal dumps recorded on Rails 6.1/7.1
+# (Mysql2/PostgreSQL/SQLite/Trilogy); no honest ClickHouse dump can exist —
+# this adapter never ran on those versions and dumps embed adapter types.
+MarshalSerializationTest:
+  test_deserializing_rails_6_1_marshal_basic: &no_historic_marshal_dumps >-
+    upstream's fixture dumps were recorded per-adapter on Rails 6.1/7.1; this
+    adapter has no honest historical dump to replay
+  test_deserializing_rails_6_1_marshal_with_loaded_association_cache: *no_historic_marshal_dumps
+  test_deserializing_rails_7_1_marshal_basic: *no_historic_marshal_dumps
+  test_deserializing_rails_7_1_marshal_with_loaded_association_cache: *no_historic_marshal_dumps

@@ -61,7 +61,7 @@ module ARCompat
       integer_limits invoices jobs jobs_pool keyboards kitchens lessons lessons_students line_items lions liquid
       magazines mateys
       member_details member_types members memberships mentors messages mice
-      minimalistics minivans mixed_case_monkeys molecules movies nodes non_primary_keys
+      minimalistics minivans mixed_case_monkeys mixins molecules movies nodes non_primary_keys notifications
       numeric_data orders organizations overloaded_types owners parrots parrots_pirates parrots_treasures people
       peoples_treasures pets pets_treasures pirates price_estimates prisoners product_types products professors
       program_offerings programs recipes recipients
@@ -844,6 +844,18 @@ module ARCompat
         t.string :name, null: true
       end
 
+      connection.create_table :mixins, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :parent_id, limit: 8, null: true
+        t.integer :pos, limit: 8, null: true
+        t.datetime :created_at, precision: 6, null: true
+        t.datetime :updated_at, precision: 6, null: true
+        t.integer :lft, limit: 8, null: true
+        t.integer :rgt, limit: 8, null: true
+        t.integer :root_id, limit: 8, null: true
+        t.string :type, null: true
+      end
+
       connection.create_table :minimalistics, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :expires_at, limit: 8, null: true
@@ -889,6 +901,11 @@ module ARCompat
         t.integer :parent_id, limit: 8, null: true
         t.string :name, null: true
         t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :notifications, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :message, null: true
       end
 
       # Upstream declares non_primary_keys id: false with a plain id column — the model
