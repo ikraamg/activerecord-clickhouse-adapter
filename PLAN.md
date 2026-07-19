@@ -1310,6 +1310,32 @@ two skips (composite prefetch, key-column update). Slice grew the cpk_cars
 composite-key pair and the locking/discount-application tables. Harness:
 5,380 runs / 445 skips.
 
+**Phase 6 (cont.) — migrator, structured events, and the fixtures machinery.**
+*(landed — Iteration 44)* Vendored three suites. `migrator_test.rb` passes in
+full — the Migrator's up/down/status bookkeeping sits entirely on
+schema_migrations, which the adapter already models exactly.
+`structured_event_subscriber_test.rb` skips only the two binary-bind
+redaction tests (same one-String-type seam as log_subscriber).
+`fixtures_test.rb` is the big one: 130 runs covering ERB fixture rendering,
+custom fixture paths (naked/yml), nested fixture directories, instantiated
+fixtures, HABTM fixture linking, and fixture accessors — three skips. Two are
+familiar dialect (a t.time DDL clone; the JPEG blob whose bytes round-trip
+exactly but read back UTF-8-tagged, since with one String type no binary cast
+type exists to force ASCII-8BIT). The third group is structural:
+`TransactionalFixturesTest` opts into use_transactional_tests, whose whole
+point is that a destroy rolls back — with honest no-op transactions the
+destroy is real and the sibling test dies in before_setup instantiating the
+now-missing fixture, so the class retires via "*" (decision #15's truncate +
+reload is the substitute). The slice grew the fk_test trio,
+items/doubloons/randomly_named tables, cpk_posts_tags, and the harness now
+carries upstream's auxiliary fixture directories (all/, naked/, categories/,
+primary_key_error/, to_be_linked/) plus ASSETS_ROOT for the binary-fixture
+ERB. One environmental reconfirmation: a long-uptime tmpfs container hit
+NOT_ENOUGH_SPACE mid-run and cascaded 29 nil-permitted-classes errors through
+SerializedAttributeTestWithYamlSafeLoad; the identical corpus was green on a
+fresh container — reset before blaming the harness. Harness: 5,558 runs /
+450 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per

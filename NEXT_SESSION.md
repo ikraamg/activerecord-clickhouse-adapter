@@ -1,37 +1,37 @@
-# Iteration 44: the corpus long tail, 0.2.0 cut, or core cutover PR
+# Iteration 45: 0.2.0 cut, core cutover PR, or the pool corpus
 
-> Status at handoff: Iteration 43 landed eight corpora (statement_cache,
-> nested_attributes_with_callbacks, habtm_destroy_order, custom_locking,
-> explain_subscriber with zero skips; log_subscriber, locking, and the
-> associations umbrella with nine skips on existing seams). Two Arel visitor
-> additions, spec'd live in dialect_spec: matches/does_not_match render
-> native ILIKE for the case-insensitive default and refuse custom ESCAPE
-> (no ESCAPE clause exists); FOR UPDATE drops silently like sqlite3's
-> visitor, so optimistic locking passes end-to-end and Model.lock/with_lock
-> code keeps working. Harness: 5,380 runs / 445 skips. Gem suite 555 green,
-> rubocop zero.
+> Status at handoff: Iteration 44 landed migrator_test (passes in full),
+> structured_event_subscriber_test (two binary-redaction skips), and
+> fixtures_test — 130 runs over ERB rendering, custom paths, nested fixture
+> dirs, instantiated fixtures, and HABTM linking, with three skips (t.time
+> clone, UTF-8-tagged JPEG read, and TransactionalFixturesTest retired
+> whole: its premise is rollback-based fixture isolation). The slice grew
+> fk_test tables, doubloons, randomly_named tables, cpk_posts_tags, and
+> upstream's auxiliary fixture directories + ASSETS_ROOT. Harness: 5,558
+> runs / 450 skips. Gem suite 555 green, rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
-1. **Corpus long tail:** what's left is multi-connection/pool machinery
-   (connection_pool, connection_management, pooled_connections, reaper,
-   database_selector, multiple_db, connection_handling), transactions
-   (transactions, transaction_callbacks, transaction_isolation — expect
-   wholesale no-transactions skips), and infrastructure (fixtures_test,
-   migrator_test, query_cache siblings, structured_event_subscriber).
-   Diminishing returns: triage each for whether an honest run is even
-   meaningful before vendoring.
-2. **Cut 0.2.0:** CHANGELOG is drafted, benchmarks re-run (BASELINE.md
+1. **Cut 0.2.0:** CHANGELOG is drafted, benchmarks re-run (BASELINE.md
    2026-07-18), README audited, the OLAP example ships and is guard-spec'd.
    Ikraam's bar — "pretty much drop-in for OLAP + an example" — reads as met;
    the release itself waits for his explicit go (version bump decision:
    datetime default-precision change is breaking-ish, suggesting 0.2.0 over
    0.1.1).
-3. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
+2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
    published 0.1.0; push the branch and open the PR when Ikraam wants it.
    Re-pin to 0.2.0 first if that ships.
+3. **Corpus long tail (low value, deliberate deferrals):** what remains is
+   multi-connection/pool machinery (connection_pool, connection_management,
+   pooled_connections, reaper, database_selector, multiple_db,
+   connection_handling — pool-internal, adapter-agnostic, and flaky under a
+   live server) and the transactions family (transactions,
+   transaction_callbacks, transaction_isolation — their premise is rollback
+   semantics; with honest no-op transactions the runs would be wholesale
+   skips, adding noise, not signal). Vendor only if a concrete consumer bug
+   points at one of them.
 
 ## Watch out for (carried forward)
 
