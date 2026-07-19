@@ -54,3 +54,8 @@ QueryLogsTest:
     Rails main extracted QueryLogs' comment cache into ActiveSupport::ExecutionContext
     (6bad959565), removing cached_comment= — the pinned suite's own setup calls it,
     erroring every test before a per-test skip could fire
+LogSubscriberTest:
+  "*": >-
+    Rails main replaced the classic LogSubscriber attach API (attach_to /
+    log_subscribers) with structured event reporting; the pinned suite's own
+    setup calls attach_to and errors before any per-test skip could fire
