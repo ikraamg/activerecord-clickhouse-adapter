@@ -26,6 +26,8 @@ module ARCompat
       "courses_professors" => nil,
       "cpk_order_tags" => %i[order_id tag_id],
       "cpk_books" => %i[author_id id],
+      "cpk_cars" => %i[make model],
+      "cpk_car_reviews" => :id,
       "cpk_chapters" => %i[author_id id],
       "cpk_posts" => %i[title author],
       "jobs_pool" => nil,
@@ -49,16 +51,19 @@ module ARCompat
       comment_overlapping_counter_caches comments
       companies computers
       computers_developers contracts countries countries_treaties courses courses_professors
-      cpk_authors cpk_books cpk_chapters cpk_comments cpk_order_agreements cpk_order_tags
-      cpk_orders cpk_posts
+      cpk_authors cpk_books cpk_car_reviews cpk_cars cpk_chapters cpk_comments
+      cpk_order_agreements cpk_order_tags cpk_orders cpk_posts
       cpk_reviews cpk_tags customer_carriers customers
       dashboards departments developers
       developers_projects
-      dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays events
+      discounts dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays events
       eyes faces families
-      family_trees friendships funny_jokes goofy_string_id guitars hardbacks having hotels humans
+      family_trees friendships frogs funny_jokes goofy_string_id guitars hardbacks having hotels humans
+      legacy_things lock_without_defaults lock_without_defaults_cust personal_legacy_things
+      shipping_line_discount_applications shipping_lines
       images interests iris
-      integer_limits invoices jobs jobs_pool keyboards kitchens lessons lessons_students line_items lions liquid
+      integer_limits invoices jobs jobs_pool keyboards kitchens lessons lessons_students
+      line_item_discount_applications line_items lions liquid postesques
       magazines mateys
       member_details member_types members memberships mentors messages mice
       minimalistics minivans mixed_case_monkeys mixins molecules movies nodes non_primary_keys notifications
@@ -425,6 +430,19 @@ module ARCompat
         t.string :text, null: true
       end
 
+      connection.create_table :cpk_cars, force: true, order: "(make, model)" do |t|
+        t.string :make, null: false
+        t.string :model, null: false
+      end
+
+      connection.create_table :cpk_car_reviews, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :car_make, null: false
+        t.string :car_model, null: false
+        t.string :comment, null: true
+        t.integer :rating, limit: 8, null: true
+      end
+
       connection.create_table :cpk_books, force: true, order: "(author_id, id)" do |t|
         t.integer :author_id, limit: 8
         t.integer :id, limit: 8
@@ -660,9 +678,60 @@ module ARCompat
         t.string :token, null: true
       end
 
+      connection.create_table :frogs, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
       connection.create_table :funny_jokes, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.string :name, null: true
+      end
+
+      connection.create_table :discounts, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :amount, limit: 8, null: true
+      end
+
+      connection.create_table :lock_without_defaults, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :title, null: true
+        t.integer :lock_version, limit: 8, null: true
+        t.datetime :created_at, precision: 6, null: true
+        t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :lock_without_defaults_cust, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :title, null: true
+        t.integer :custom_lock_version, limit: 8, null: true
+        t.datetime :created_at, precision: 6, null: true
+        t.datetime :updated_at, precision: 6, null: true
+      end
+
+      connection.create_table :legacy_things, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :tps_report_number, limit: 8, null: true
+        t.integer :version, limit: 8, null: false, default: 0
+      end
+
+      connection.create_table :personal_legacy_things, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :tps_report_number, limit: 8, null: true
+        t.integer :person_id, limit: 8, null: true
+        t.integer :version, limit: 8, null: false, default: 0
+      end
+
+      connection.create_table :shipping_lines, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :invoice_id, limit: 8, null: true
+        t.integer :amount, limit: 8, null: true
+      end
+
+      connection.create_table :shipping_line_discount_applications, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :shipping_line_id, limit: 8, null: true
+        t.integer :discount_id, limit: 8, null: true
       end
 
       connection.create_table :friendships, force: true, order: "id" do |t|
@@ -778,6 +847,18 @@ module ARCompat
         t.integer :id, limit: 8
         t.integer :invoice_id, limit: 8, null: true
         t.integer :amount, null: true
+      end
+
+      connection.create_table :line_item_discount_applications, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :line_item_id, limit: 8, null: true
+        t.integer :discount_id, limit: 8, null: true
+      end
+
+      connection.create_table :postesques, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :author_name, null: true
+        t.string :author_id, null: true
       end
 
       connection.create_table :lions, force: true, order: "id" do |t|

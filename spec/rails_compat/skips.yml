@@ -865,3 +865,31 @@ MarshalSerializationTest:
   test_deserializing_rails_6_1_marshal_with_loaded_association_cache: *no_historic_marshal_dumps
   test_deserializing_rails_7_1_marshal_basic: *no_historic_marshal_dumps
   test_deserializing_rails_7_1_marshal_with_loaded_association_cache: *no_historic_marshal_dumps
+
+# log_subscriber corpus (Iteration 43). Rails redacts logged binds whose cast
+# type answers binary?; ClickHouse has one byte-safe String type, so there is
+# no binary type to trigger the "<N bytes of binary data>" placeholder.
+LogSubscriberTest:
+  test_binary_data_is_not_logged: &no_binary_cast_type >-
+    one byte-safe String type — no binary cast type exists to trigger Rails'
+    binary-bind log redaction
+  test_binary_data_hash: *no_binary_cast_type
+
+# locking corpus (Iteration 43). Optimistic locking passes end-to-end (stale
+# writes match zero rows via the lock_version predicate and raise
+# StaleObjectError); FOR UPDATE drops from SQL like the sqlite3 adapter, so
+# pessimistic tests reduce to plain reads.
+OptimisticLockingTest:
+  test_lock_without_default_queries_count: *query_count_tally
+  test_lock_with_custom_column_without_default_queries_count: *query_count_tally
+  test_update_with_dirty_primary_key: *key_column_update
+
+PessimisticLockingTest:
+  test_with_lock_rolls_back_transaction: *autosave_rollback
+
+# associations umbrella corpus (Iteration 43).
+AssociationsTest:
+  test_loading_cpk_association_when_persisted_and_in_memory_differ: *composite_prefetch
+
+PreloaderTest:
+  test_preload_wont_set_the_wrong_target: *key_column_update
