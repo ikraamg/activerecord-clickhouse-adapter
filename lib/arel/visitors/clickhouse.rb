@@ -64,6 +64,29 @@ module Arel
 
       private
 
+      # Arel's matches/does_not_match default to case-insensitive; ClickHouse LIKE is
+      # case-sensitive but ships native ILIKE (probed live), so this renders exactly
+      # like the postgresql visitor. ClickHouse has no ESCAPE clause — backslash is
+      # the fixed escape character — so a custom escape refuses loudly.
+      def visit_Arel_Nodes_Matches(o, collector)
+        raise NotImplementedError, "ClickHouse LIKE has no ESCAPE clause" if o.escape
+
+        infix_value o, collector, o.case_sensitive ? " LIKE " : " ILIKE "
+      end
+
+      def visit_Arel_Nodes_DoesNotMatch(o, collector)
+        raise NotImplementedError, "ClickHouse LIKE has no ESCAPE clause" if o.escape
+
+        infix_value o, collector, o.case_sensitive ? " NOT LIKE " : " NOT ILIKE "
+      end
+
+      # No row locks in ClickHouse (reads are isolated snapshots of parts); FOR UPDATE
+      # drops silently so shared Model.lock / with_lock code keeps working — the same
+      # contract as the sqlite3 adapter's visitor.
+      def visit_Arel_Nodes_Lock(_o, collector)
+        collector
+      end
+
       # ClickHouse's mutation machinery (lightweight DELETE, ALTER UPDATE) resolves WHERE
       # against an internal projection where table-qualified column names raise
       # UNKNOWN_IDENTIFIER (code 47), and it requires an explicit WHERE clause — so

@@ -46,6 +46,52 @@ RSpec.describe "ClickHouse dialect relation extensions" do
     end
   end
 
+  # Arel's matches/does_not_match default to case-insensitive (MySQL's LIKE
+  # behavior); ClickHouse LIKE is case-sensitive but ships native ILIKE, so the
+  # visitor renders ILIKE exactly like the postgresql adapter (probed live).
+  describe ".matches" do
+    it "renders case-insensitive matches as ILIKE" do
+      relation = model.where(model.arel_table[:v].matches("FIR%"))
+      expect(relation.to_sql).to include("ILIKE")
+    end
+
+    it "matches case-insensitively on the live server" do
+      expect(model.where(model.arel_table[:v].matches("FIR%")).count).to eq(100)
+    end
+
+    it "keeps explicitly case-sensitive matches as LIKE" do
+      relation = model.where(model.arel_table[:v].matches("FIR%", nil, true))
+      expect(relation.to_sql).not_to include("ILIKE")
+    end
+
+    it "finds nothing with a case-sensitive mismatch" do
+      expect(model.where(model.arel_table[:v].matches("FIR%", nil, true)).count).to eq(0)
+    end
+
+    it "renders negated case-insensitive matches as NOT ILIKE" do
+      relation = model.where(model.arel_table[:v].does_not_match("FIR%"))
+      expect(relation.to_sql).to include("NOT ILIKE")
+    end
+
+    it "rejects custom ESCAPE characters, which ClickHouse does not parse" do
+      relation = model.where(model.arel_table[:v].matches("100!%", "!"))
+      expect { relation.to_sql }.to raise_error(NotImplementedError, /ESCAPE/)
+    end
+  end
+
+  # ClickHouse has no row locks (reads are isolated snapshots of parts), so the
+  # visitor drops FOR UPDATE exactly like the sqlite3 adapter does — shared code
+  # using Model.lock / with_lock keeps working instead of dying on syntax.
+  describe ".lock" do
+    it "drops FOR UPDATE from the rendered SQL" do
+      expect(model.lock.where(k: 1).to_sql).not_to include("FOR UPDATE")
+    end
+
+    it "still answers the query" do
+      expect(model.lock.where(k: 1).count).to eq(2)
+    end
+  end
+
   describe ".sample" do
     it "reads roughly the requested fraction" do
       expect(model.sample(0.5).count).to be_between(1, 100)
