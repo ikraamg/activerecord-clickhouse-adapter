@@ -1,32 +1,28 @@
-# Iteration 43: the next corpus batch, 0.2.0 cut, or core cutover PR
+# Iteration 44: the corpus long tail, 0.2.0 cut, or core cutover PR
 
-> Status at handoff: Iteration 42 landed sixteen small corpora (callbacks,
-> core, modules, mixin, i18n, finder_respond_to, suppressor,
-> asynchronous_queries, query_logs, collection_cache_key,
-> marshal_serialization, forbidden_attributes_protection, token_for,
-> primary_class, inherited, active_record) — thirteen with zero skips. One
-> adapter fix: SQL carrying invalid UTF-8 now drops to binary in
-> hoist_trailing_comments instead of dying in its regexes (ClickHouse is
-> byte-safe; probed live for literals and backtick identifiers). Seven
-> skips: two pretty_print (no TIME type), one QueryLogs (upstream aliases
-> with a quoted string — ClickHouse syntax error regardless of encoding),
-> four Marshal historical dumps (no honest ClickHouse 6.1/7.1 dump exists).
-> One skips_edge entry: Rails main's Arel::Table.new is keyword-only now.
-> Harness: 5,125 runs / 437 skips. Gem suite 547 green, rubocop zero.
+> Status at handoff: Iteration 43 landed eight corpora (statement_cache,
+> nested_attributes_with_callbacks, habtm_destroy_order, custom_locking,
+> explain_subscriber with zero skips; log_subscriber, locking, and the
+> associations umbrella with nine skips on existing seams). Two Arel visitor
+> additions, spec'd live in dialect_spec: matches/does_not_match render
+> native ILIKE for the case-insensitive default and refuse custom ESCAPE
+> (no ESCAPE clause exists); FOR UPDATE drops silently like sqlite3's
+> visitor, so optimistic locking passes end-to-end and Model.lock/with_lock
+> code keeps working. Harness: 5,380 runs / 445 skips. Gem suite 555 green,
+> rubocop zero.
 
 ## Scope
 
 Pick one (value order):
 
-1. **Next corpus batch:** the unvendored remainder is now mostly
-   multi-connection/pool machinery (connection_pool, connection_management,
-   pooled_connections, reaper, database_selector, multiple_db,
-   connection_handling), transactions (transactions, transaction_callbacks,
-   transaction_isolation — expect wholesale no-transactions skips), and
-   infrastructure (fixtures_test, migrator_test, query_cache siblings,
-   log_subscriber, structured_event_subscriber, explain_subscriber,
-   locking_test, associations_test). Diminishing corpus returns are near:
-   triage each for whether an honest run is even meaningful before vendoring.
+1. **Corpus long tail:** what's left is multi-connection/pool machinery
+   (connection_pool, connection_management, pooled_connections, reaper,
+   database_selector, multiple_db, connection_handling), transactions
+   (transactions, transaction_callbacks, transaction_isolation — expect
+   wholesale no-transactions skips), and infrastructure (fixtures_test,
+   migrator_test, query_cache siblings, structured_event_subscriber).
+   Diminishing returns: triage each for whether an honest run is even
+   meaningful before vendoring.
 2. **Cut 0.2.0:** CHANGELOG is drafted, benchmarks re-run (BASELINE.md
    2026-07-18), README audited, the OLAP example ships and is guard-spec'd.
    Ikraam's bar — "pretty much drop-in for OLAP + an example" — reads as met;

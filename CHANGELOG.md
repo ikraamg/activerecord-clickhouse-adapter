@@ -20,6 +20,12 @@ Added:
   arbitrary byte sequences)
 - Added `payload[:affected_rows]` to `sql.active_record` notifications, populated
   from the server summary's written rows on every query and on `insert_stream`
+- Added case-insensitive `matches`/`does_not_match` rendering via ClickHouse's
+  native `ILIKE` (LIKE is case-sensitive here, unlike MySQL); a custom ESCAPE
+  character raises `NotImplementedError` because ClickHouse has no ESCAPE clause
+- Added a no-op `FOR UPDATE` visitor (reads are isolated snapshots of parts; no row
+  locks exist), so shared `Model.lock`/`with_lock` code runs instead of dying —
+  optimistic locking via `lock_version` works end-to-end
 
 Fixed:
 

@@ -1288,6 +1288,28 @@ variants/mixins fixtures. One edge-overlay entry: Rails main refactored
 pinned table_metadata test constructs positionally. Harness: 5,125 runs /
 437 skips.
 
+**Phase 6 (cont.) — locking, subscribers, and the associations umbrella.**
+*(landed — Iteration 43)* Vendored eight suites: statement_cache,
+nested_attributes_with_callbacks, habtm_destroy_order, custom_locking, and
+explain_subscriber pass with zero skips. Two Arel visitor additions fell out,
+each spec'd live in dialect_spec: `matches`/`does_not_match` now render
+ClickHouse's native ILIKE for the case-insensitive default (LIKE here is
+case-sensitive, unlike MySQL; same shape as the postgresql visitor) and refuse
+custom ESCAPE characters loudly (no ESCAPE clause exists — backslash is fixed);
+FOR UPDATE drops silently from the SQL like the sqlite3 visitor, because reads
+are isolated snapshots of parts and no row locks exist — so shared
+`Model.lock`/`with_lock` code keeps working. With that, optimistic locking
+passes end-to-end (stale writes match zero rows via the lock_version predicate
+and raise StaleObjectError) and pessimistic tests reduce to plain reads; the
+locking corpus carries five skips on existing seams (query-count tallies,
+key-column update, rollback) plus log_subscriber's two binary-bind redaction
+tests (one byte-safe String type — no binary cast type exists to trigger
+Rails' "<N bytes>" placeholder). The associations umbrella (AssociationsTest,
+PreloaderTest, GeneratedMethodsTest, WithAnonymousClassTest, ...) runs with
+two skips (composite prefetch, key-column update). Slice grew the cpk_cars
+composite-key pair and the locking/discount-application tables. Harness:
+5,380 runs / 445 skips.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per
