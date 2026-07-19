@@ -30,6 +30,7 @@ module ARCompat
       "cpk_car_reviews" => :id,
       "cpk_chapters" => %i[author_id id],
       "cpk_posts" => %i[title author],
+      "fk_test_has_pk" => :pk_id,
       "jobs_pool" => nil,
       "lessons_students" => nil,
       "non_primary_keys" => nil,
@@ -53,15 +54,16 @@ module ARCompat
       computers_developers contracts countries countries_treaties courses courses_professors
       cpk_authors cpk_books cpk_car_reviews cpk_cars cpk_chapters cpk_comments
       cpk_order_agreements cpk_order_tags cpk_orders cpk_posts
-      cpk_reviews cpk_tags customer_carriers customers
+      cpk_posts_tags cpk_reviews cpk_tags customer_carriers customers
       dashboards departments developers
       developers_projects
-      discounts dog_lovers dogs drink_designers edges electrons engines enrollments entrants entries essays events
-      eyes faces families
+      discounts dog_lovers dogs doubloons drink_designers edges electrons engines enrollments entrants entries essays
+      events
+      eyes faces families fk_object_to_point_tos fk_pointing_to_non_existent_objects fk_test_has_fk fk_test_has_pk
       family_trees friendships frogs funny_jokes goofy_string_id guitars hardbacks having hotels humans
       legacy_things lock_without_defaults lock_without_defaults_cust personal_legacy_things
       shipping_line_discount_applications shipping_lines
-      images interests iris
+      images interests iris items
       integer_limits invoices jobs jobs_pool keyboards kitchens lessons lessons_students
       line_item_discount_applications line_items lions liquid postesques
       magazines mateys
@@ -69,7 +71,8 @@ module ARCompat
       minimalistics minivans mixed_case_monkeys mixins molecules movies nodes non_primary_keys notifications
       numeric_data orders organizations overloaded_types owners parrots parrots_pirates parrots_treasures people
       peoples_treasures pets pets_treasures pirates price_estimates prisoners product_types products professors
-      program_offerings programs recipes recipients
+      program_offerings programs randomly_named_table1 randomly_named_table2 randomly_named_table3
+      recipes recipients
       post_comments_counts posts projects ratings readers records references rooms
       sections seminars serialized_posts sessions
       sharded_blog_posts sharded_blog_posts_tags sharded_blogs sharded_comments sharded_tags
@@ -562,6 +565,13 @@ module ARCompat
         t.string :name
       end
 
+      connection.create_table :cpk_posts_tags, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :post_title, null: true
+        t.string :post_author, null: true
+        t.integer :tag_id, limit: 8, null: true
+      end
+
       connection.create_table :customer_carriers, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :customer_id, limit: 8, null: true
@@ -591,6 +601,12 @@ module ARCompat
         t.integer :breeder_id, limit: 8, null: true
         t.integer :dog_lover_id, limit: 8, null: true
         t.string :alias, null: true
+      end
+
+      connection.create_table :doubloons, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :pirate_id, limit: 8, null: true
+        t.integer :weight, null: true
       end
 
       connection.create_table :edges, force: true, order: "(source_id, sink_id)" do |t|
@@ -790,6 +806,29 @@ module ARCompat
         end
       end
 
+      connection.create_table :fk_object_to_point_tos, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+      end
+
+      connection.create_table :fk_test_has_pk, force: true, id: false, order: "pk_id" do |t|
+        t.integer :pk_id, limit: 8
+      end
+
+      connection.create_table :fk_pointing_to_non_existent_objects, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :fk_object_to_point_to_id, limit: 8, null: false
+      end
+
+      connection.create_table :fk_test_has_fk, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.integer :fk_id, limit: 8, null: false
+      end
+
+      connection.create_table :items, force: true, order: "id" do |t|
+        t.integer :id, limit: 8
+        t.string :name, null: true
+      end
+
       connection.create_table :invoices, force: true, order: "id" do |t|
         t.integer :id, limit: 8
         t.integer :balance, null: true
@@ -853,6 +892,14 @@ module ARCompat
         t.integer :id, limit: 8
         t.integer :line_item_id, limit: 8, null: true
         t.integer :discount_id, limit: 8, null: true
+      end
+
+      (1..3).each do |i|
+        connection.create_table :"randomly_named_table#{i}", force: true, order: "id" do |t|
+          t.integer :id, limit: 8
+          t.string :some_attribute, null: true
+          t.integer :another_attribute, limit: 8, null: true
+        end
       end
 
       connection.create_table :postesques, force: true, order: "id" do |t|

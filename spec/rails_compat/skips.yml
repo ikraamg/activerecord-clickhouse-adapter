@@ -875,6 +875,31 @@ LogSubscriberTest:
     binary-bind log redaction
   test_binary_data_hash: *no_binary_cast_type
 
+# structured_event_subscriber corpus (Iteration 44): same redaction seam.
+ActiveRecord::StructuredEventSubscriberTest:
+  test_binary_data_is_not_logged: *no_binary_cast_type
+  test_binary_data_hash: *no_binary_cast_type
+
+# fixtures corpus (Iteration 44). Fixture loading, ERB rendering, custom paths,
+# and accessors all pass; the skips are the familiar dialect seams.
+FixturesTest:
+  test_binary_in_fixtures: >-
+    the JPEG's bytes round-trip exactly, but with one String type the read
+    comes back UTF-8 tagged, not ASCII-8BIT — no binary cast type exists to
+    force-encode it
+  test_inserts_with_pre_and_suffix: *no_time_ddl
+# The class opts into use_transactional_tests: fixtures insert once and each
+# test's writes roll back. With honest no-op transactions test_destroy's delete
+# leaks, and the sibling test then dies in before_setup instantiating @first —
+# ahead of any per-test skip hook.
+TransactionalFixturesTest:
+  "*": &fixture_rollback >-
+    transactional fixtures undo writes by rolling back; ClickHouse
+    transactions are honest no-ops, so the destroy is real (decision #15:
+    truncate + reload instead)
+TransactionalFixturesOnCustomConnectionTest:
+  test_leaky_destroy: *fixture_rollback
+
 # locking corpus (Iteration 43). Optimistic locking passes end-to-end (stale
 # writes match zero rows via the lock_version predicate and raise
 # StaleObjectError); FOR UPDATE drops from SQL like the sqlite3 adapter, so

@@ -21,6 +21,7 @@ require "yaml"
 # them (ReservedWordTest's reserved_words/, YamlSerializationTest's YAML corpus).
 TEST_ROOT = File.expand_path("../../vendor", __dir__)
 FIXTURES_ROOT = "#{TEST_ROOT}/fixtures".freeze
+ASSETS_ROOT = "#{TEST_ROOT}/assets".freeze
 
 module ARCompat
   # skips.yml is the ratchet for the pinned corpus (vendor/UPSTREAM) on released
