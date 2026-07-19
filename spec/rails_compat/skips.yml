@@ -918,3 +918,8 @@ AssociationsTest:
 
 PreloaderTest:
   test_preload_wont_set_the_wrong_target: *key_column_update
+  # Seen flaking on CI (Iteration 44): the assertion includes row order.
+  test_preload_does_not_concatenate_duplicate_records: >-
+    upstream asserts the association array in insertion order; without an
+    ORDER BY ClickHouse returns part-read order, so a freshly inserted row
+    can legitimately surface first
