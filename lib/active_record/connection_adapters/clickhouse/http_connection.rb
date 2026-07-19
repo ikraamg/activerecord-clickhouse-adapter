@@ -20,6 +20,46 @@ module ActiveRecord
         BINARY_FORMAT = "RowBinaryWithNamesAndTypes"
         JSON_FORMAT = "JSONCompactEachRowWithNamesAndTypes"
 
+        # Failures raised before the request reaches a server: retrying them on
+        # another replica can never double a write. Anything mid-flight (read
+        # timeout, reset) raises instead — the statement may have executed.
+        CONNECT_ERRORS = [Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError, Net::OpenTimeout].freeze
+
+        # Process-wide replica ledger: rotates the starting endpoint across
+        # connections and remembers connect failures so fresh connections skip
+        # an endpoint that refused within the (per-config) cooldown window.
+        @start_counter = 0
+        @connect_failure_times = {}
+        @ledger_lock = Mutex.new
+
+        class << self
+          def claim_start_index(endpoints, cooldown)
+            @ledger_lock.synchronize do
+              start = @start_counter % endpoints.size
+              @start_counter += 1
+              healthy_offset = endpoints.size.times.find do |offset|
+                !recently_failed?(endpoints[(start + offset) % endpoints.size], cooldown)
+              end
+              (start + (healthy_offset || 0)) % endpoints.size
+            end
+          end
+
+          def record_connect_failure(endpoint)
+            @ledger_lock.synchronize do
+              @connect_failure_times[endpoint] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            end
+          end
+
+          private
+
+          def recently_failed?(endpoint, cooldown)
+            failed_at = @connect_failure_times[format_endpoint(endpoint)]
+            failed_at && Process.clock_gettime(Process::CLOCK_MONOTONIC) - failed_at < cooldown
+          end
+
+          def format_endpoint(endpoint) = endpoint.join(":")
+        end
+
         class ExecutionError < StandardError
           attr_reader :code
 
@@ -57,7 +97,13 @@ module ActiveRecord
         def initialize(config)
           @config = config
           @select_format = config[:select_format].to_s == "json" ? JSON_FORMAT : BINARY_FORMAT
-          @http = build_http
+          @endpoints = build_endpoints
+          @endpoint_index = self.class.claim_start_index(@endpoints, failover_cooldown)
+          @http = nil
+        end
+
+        def current_endpoint
+          @endpoints[@endpoint_index].join(":")
         end
 
         # Adapts an enumerator of encoded lines to the partial-read IO contract
@@ -99,7 +145,7 @@ module ActiveRecord
           request = post_request(query_params({}, JSON_FORMAT).merge(query: sql))
           request["Transfer-Encoding"] = "chunked"
           request.body_stream = ChunkedBody.new(lines)
-          parse(raise_unless_success(@http.request(request)), JSON_FORMAT)
+          parse(raise_unless_success(send_request(request)), JSON_FORMAT)
         end
 
         # Scopes extra server settings to the requests made inside the block — the
@@ -120,15 +166,58 @@ module ActiveRecord
         end
 
         def close
-          @http.finish if @http.started?
+          @http.finish if @http&.started?
         rescue IOError
           nil
         end
 
         private
 
+        def http
+          @http ||= build_http
+        end
+
+        # Walks the endpoint list on connect-phase failures, at most one attempt
+        # per endpoint. A single-host config raises immediately, as before.
+        def send_request(request)
+          attempts = 0
+          begin
+            http.request(request)
+          rescue *CONNECT_ERRORS
+            attempts += 1
+            raise if attempts >= @endpoints.size
+
+            rotate_endpoint
+            retry
+          end
+        end
+
+        def rotate_endpoint
+          self.class.record_connect_failure(current_endpoint)
+          close
+          @http = nil
+          @endpoint_index = (@endpoint_index + 1) % @endpoints.size
+        end
+
+        # hosts: lists interchangeable replicas as "host" or "host:port" strings
+        # (the port: key is the default); host:/port: alone stay a single endpoint.
+        def build_endpoints
+          hosts = Array(@config[:hosts])
+          return [[@config[:host], @config[:port]]] if hosts.empty?
+
+          hosts.map do |entry|
+            host, port = entry.to_s.split(":", 2)
+            [host, port ? Integer(port) : @config[:port] || 8123]
+          end
+        end
+
+        def failover_cooldown
+          @config.fetch(:failover_cooldown, 30)
+        end
+
         def build_http
-          http = Net::HTTP.new(@config[:host], @config[:port])
+          host, port = @endpoints[@endpoint_index]
+          http = Net::HTTP.new(host, port)
           configure_tls(http)
           http.open_timeout = @config[:connect_timeout] if @config[:connect_timeout]
           http.read_timeout = @config[:read_timeout] if @config[:read_timeout]
@@ -146,7 +235,7 @@ module ActiveRecord
         def perform(sql, params, format)
           request = post_request(query_params(params, format))
           request.body = sql
-          raise_unless_success(@http.request(request))
+          raise_unless_success(send_request(request))
         end
 
         def post_request(params)
@@ -193,7 +282,10 @@ module ActiveRecord
             input_format_null_as_default: 0,
             # Server gzips responses ~3.6x smaller; Net::HTTP decompresses transparently
             # (it sends Accept-Encoding: gzip by default). Probed 2026-07-12, PLAN.md §2.
-            enable_http_compression: @config.fetch(:compression, true) ? 1 : 0
+            enable_http_compression: @config.fetch(:compression, true) ? 1 : 0,
+            # readonly=2 (not 1): strict readonly refuses the settings above with
+            # code 164 before any query runs — probed live 2026-07-19.
+            readonly: @config[:read_only] ? 2 : nil
           )
         end
 

@@ -8,6 +8,7 @@ module ActiveRecord
       class MemoryLimitExceeded < ActiveRecord::StatementInvalid; end
       class QueryTimeout < ActiveRecord::StatementInvalid; end
       class AuthenticationError < ActiveRecord::StatementInvalid; end
+      class AccessDenied < ActiveRecord::StatementInvalid; end
 
       module ErrorTranslation
         EXCEPTION_CLASS_BY_CODE = {
@@ -16,6 +17,7 @@ module ActiveRecord
           241 => MemoryLimitExceeded,
           159 => QueryTimeout,
           160 => QueryTimeout,
+          497 => AccessDenied,
           516 => AuthenticationError
         }.freeze
 
@@ -23,9 +25,18 @@ module ActiveRecord
         # input_format_null_as_default = 0) is a Rails not-null violation.
         NULL_INSERT_MESSAGE = /Cannot insert NULL value into a column of type/
 
+        # READONLY: the server refusing a write for a readonly user or a
+        # read_only: true connection — same refusal Rails models client-side
+        # with while_preventing_writes, so it raises Rails' class for it.
+        READONLY_CODE = 164
+
         private
 
         def translate_exception(exception, message:, sql:, binds:)
+          if exception.is_a?(HTTPConnection::ExecutionError) && exception.code == READONLY_CODE
+            return ActiveRecord::ReadOnlyError.new(message)
+          end
+
           server_error = server_exception_class(exception)
           return server_error.new(message, sql: sql, binds: binds) if server_error
 
