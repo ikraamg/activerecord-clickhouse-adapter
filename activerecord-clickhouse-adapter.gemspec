@@ -5,7 +5,7 @@
 # `autoload :ConnectionAdapters` (proven in spec/clickhouse/gem_version_spec.rb).
 Gem::Specification.new do |spec|
   spec.name = "activerecord-clickhouse-adapter"
-  spec.version = "0.1.0"
+  spec.version = "0.2.0"
   spec.authors = ["Ikraam Ghoor"]
   spec.summary = "ClickHouse database adapter for Active Record"
   spec.description = "A fully featured Active Record adapter for ClickHouse: native types, " \

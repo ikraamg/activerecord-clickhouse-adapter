@@ -1,4 +1,4 @@
-# Unreleased (0.2.0 draft)
+# 0.2.0 (2026-07-23)
 
 Breaking-ish (schema diff noise, not data changes):
 
