@@ -1,29 +1,24 @@
-# Iteration 47: 0.2.0 cut, or the core cutover PR
+# Iteration 48: publish 0.2.0, then the core cutover PR
 
-> Status at handoff: Iteration 46 landed primary-key auto-detection (decision
-> #64, approved): `primary_keys(table)` reports a sorting key that is exactly
-> one U/Int64+/UUID column — the same gate as the client-side id generator —
-> so id-keyed tables are drop-in (find/update/destroy, generated ids, no
-> `self.primary_key` boilerplate). Composite/expression/non-id keys still
-> report `[]`; the schema dumper suppresses reporting to keep the id: false +
-> order: dump shape. `create_table id: :bigint/:uuid` now works without
-> order: (pk column doubles as sorting key; :primary_key native type is plain
-> Int64). `Errno::ENETUNREACH` joined CONNECT_ERRORS (added blind, approved).
-> Four harness skips erased. Suite 585 green, harness 5,558 runs / 447 skips,
-> rubocop zero.
+> Status at handoff: Iteration 47 cut 0.2.0 locally — version bumped in
+> gem_version.rb + gemspec (a spec enforces parity), CHANGELOG heading dated
+> 2026-07-23, full combined gate green at the new version (586 examples incl.
+> the 5,558-run harness, 0 failures, rubocop zero), and the .gem builds with
+> the right contents (lib + CHANGELOG/LICENSE/README, nothing else). All of
+> Iterations 45–46 is committed in seven Alchemist-style commits plus the
+> release bump. Nothing is pushed or published — both need Ikraam's hands or
+> explicit go.
 
-## Scope
+## Scope (in order)
 
-Pick one (value order):
-
-1. **Cut 0.2.0:** CHANGELOG is drafted (failover, read_only, AccessDenied, pk
-   auto-detection, id: DSL), README covers all of it, benchmarks fresh
-   (BASELINE.md 2026-07-18 — the pk-reporting change touches only SCHEMA
-   queries, cached per connection, so no re-run needed unless requested).
-   The release waits for Ikraam's explicit go.
-2. **Core cutover PR:** the `adapter-port` worktree is committed and pinned to
-   published 0.1.0; push the branch and open the PR when Ikraam wants it.
-   Re-pin to 0.2.0 first if that ships.
+1. **Publish 0.2.0 (needs Ikraam):** `git push`, tag `v0.2.0`, `gem push
+   activerecord-clickhouse-adapter-0.2.0.gem` (rubygems MFA is required by
+   the gemspec metadata, so this is interactive). The built gem sits in the
+   repo root, gitignored.
+2. **Core cutover PR:** re-pin the `adapter-port` worktree from 0.1.0 to the
+   published 0.2.0, push the branch, open the PR against core. Its
+   `db/migrate_clickhouse/` corpus is already proven verbatim (27 migrations,
+   snapshot @ b66bbb90b).
 3. **Corpus long tail (low value, deliberate deferrals):** pool machinery and
    the transactions family stay out unless a concrete consumer bug points at
    them.
@@ -31,23 +26,24 @@ Pick one (value order):
 ## Watch out for (carried forward)
 
 - **One driver only:** two concurrent full gates kill the Docker VM. Before
-  any long gate: `pgrep -f "rspec|rails_compat"`. (The VM died again this
-  iteration mid-spec — `docker desktop restart`, wait, `docker compose down
-  && up -d --wait`, ~10s for the port proxy, rerun.)
+  any long gate: `pgrep -f "rspec|rails_compat"`. Recovery: `docker desktop
+  restart`, wait, `docker compose down && up -d --wait`, ~10s port proxy.
 - The tmpfs container fills after several consecutive full-harness runs
   (NOT_ENOUGH_SPACE, code 243); compose down/up resets.
-- Primary-key reporting (new): gated on `generatable_primary_key` — one
-  cached lookup serves reporting and prefetch; the cache invalidates on
-  create/drop/rename_table. The dumper wraps `super` in
-  `with_suppressed_primary_key_reporting` — never dump with reporting on
-  (Rails' dumper folds the pk into an implied id column, UInt64 → Int64).
-- Harness `PRIMARY_KEYS` map now assigns explicit nils too (upstream declares
-  those tables pk-less; detection would otherwise claim the slice's
-  synthesized id sorting key — FinderTest's implicit-order test caught it).
+- `049a427` ("Cursor: Apply local changes for cloud agent") is a placeholder
+  message but already pushed to origin — rewording means a force push;
+  Ikraam's call, default is leave it.
+- Primary-key reporting is gated on `generatable_primary_key` (one cached
+  lookup serves reporting + prefetch; invalidated by create/drop/rename).
+  The dumper must keep wrapping `super` in
+  `with_suppressed_primary_key_reporting` — reporting during dumps folds the
+  pk into an implied id column and degrades UInt64 → Int64 on reload.
+- Harness `PRIMARY_KEYS` map assigns explicit nils (upstream's pk-less
+  tables; detection would otherwise claim the synthesized id sorting key).
 - Failover: only CONNECT_ERRORS rotate endpoints — never widen the list to
-  anything that can fire after the request reached a server.
-- Read-only: `readonly=2`, never 1; grant checks fire before readonly checks
-  (497 vs 164).
+  anything that can fire after the request reached a server. Read-only:
+  `readonly=2`, never 1; grant checks fire before readonly checks (497 vs
+  164).
 - The TRMNL corpus spec prefers a live ../core checkout; re-snapshot via the
   UPSTREAM file's cp command when core adds migrations.
 - Manifest skips fire in `after_setup` (ledger #57); classes whose own
@@ -65,14 +61,16 @@ Pick one (value order):
 
 ## Open questions for Ikraam
 
-- 0.2.0: ready to cut on request — say the word and it ships.
-- `primary_keys` question is resolved (decision #64). Follow-up if a consumer
-  asks: should an Int32/UInt32 single-column sorting key report as identity
-  too? Today it doesn't (ids aren't generatable in 32 bits), so such models
-  declare `self.primary_key` explicitly — conservative, revisit on demand.
+- Publish 0.2.0: everything is staged locally; push + tag + gem push are
+  yours (MFA). Say the word if you want the push/tag done from here instead.
+- Reword the pushed placeholder commit `049a427`? Requires force push;
+  default is leave it.
+- Follow-up parked: should an Int32/UInt32 single-column sorting key report
+  as identity (detection-only, ids not generatable in 32 bits)? Conservative
+  no for now; revisit on consumer demand.
 
 ## Definition of done
 
 Full suite green (authored + harness), rubocop zero, PLAN.md §2/§5/§6 updated,
 skips.yml only grew by honestly-reasoned entries, benchmarks re-run if the
-read/write path was touched, this file rewritten for Iteration 48.
+read/write path was touched, this file rewritten for Iteration 49.

@@ -1418,6 +1418,13 @@ caught it), and four skips erased (PrimaryKeysTest auto-detect/prefix/
 returns-value, PrimaryKeyWithAutoIncrementTest bigint). Suite: 585 examples
 green; harness 5,558 runs, 0 failures, 447 skips.
 
+**Release — 0.2.0 cut locally.** *(Iteration 47, 2026-07-23)* Version bumped
+(gem_version.rb + gemspec, parity spec-enforced), CHANGELOG dated, full
+combined gate green at the new version (586 examples, 0 failures), gem built
+and content-audited. Publishing (push, v0.2.0 tag, gem push — MFA required)
+waits on Ikraam. Next: re-pin the core `adapter-port` worktree to published
+0.2.0 and open the cutover PR.
+
 ## 7. Spec strategy (three tiers)
 
 1. **Authored RSpec** (`spec/`) — the TDD driver. Named subjects, one expectation per
