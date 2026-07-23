@@ -29,21 +29,22 @@ RSpec.describe "ClickHouse per-write settings" do
 
   before { ActiveRecord::Base.lease_connection.execute("TRUNCATE TABLE write_settings_probe") }
 
+  # The server's readonly refusal (code 164) translates to ActiveRecord::ReadOnlyError.
   it "applies settings to insert_all (readonly proves the wire passthrough)" do
     expect { model.settings(readonly: 1).insert_all!([{ id: 1 }]) }
-      .to raise_error(ActiveRecord::StatementInvalid, /readonly/i)
+      .to raise_error(ActiveRecord::ReadOnlyError, /readonly/i)
   end
 
   it "applies settings to update_all" do
     model.insert_all!([{ id: 1, status: "new" }])
     expect { model.settings(readonly: 1).where(id: 1).update_all(status: "done") }
-      .to raise_error(ActiveRecord::StatementInvalid, /readonly/i)
+      .to raise_error(ActiveRecord::ReadOnlyError, /readonly/i)
   end
 
   it "applies settings to delete_all" do
     model.insert_all!([{ id: 1 }])
     expect { model.settings(readonly: 1).delete_all }
-      .to raise_error(ActiveRecord::StatementInvalid, /readonly/i)
+      .to raise_error(ActiveRecord::ReadOnlyError, /readonly/i)
   end
 
   it "inserts asynchronously but durably with async_insert settings" do

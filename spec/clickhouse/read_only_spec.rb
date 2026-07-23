@@ -52,7 +52,11 @@ RSpec.describe "Read-only ClickHouse connections" do
         IDENTIFIED WITH plaintext_password BY 'readonly'
         SETTINGS readonly = 2
       SQL
-      writer.execute("GRANT SELECT ON #{CLICKHOUSE_TEST_CONFIG[:database]}.* TO ar_readonly_spec")
+      # Full grants on purpose: the grant check fires before the readonly check
+      # (a SELECT-only user refusing CREATE TABLE raises 497 AccessDenied, not
+      # 164 READONLY — probed live 2026-07-21), and this context is about the
+      # readonly refusal specifically.
+      writer.execute("GRANT ALL ON #{CLICKHOUSE_TEST_CONFIG[:database]}.* TO ar_readonly_spec")
     end
 
     after { writer.execute("DROP USER IF EXISTS ar_readonly_spec") }

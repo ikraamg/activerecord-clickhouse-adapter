@@ -33,9 +33,7 @@ module ActiveRecord
         private
 
         def translate_exception(exception, message:, sql:, binds:)
-          if exception.is_a?(HTTPConnection::ExecutionError) && exception.code == READONLY_CODE
-            return ActiveRecord::ReadOnlyError.new(message)
-          end
+          return ActiveRecord::ReadOnlyError.new(message) if readonly_refusal?(exception)
 
           server_error = server_exception_class(exception)
           return server_error.new(message, sql: sql, binds: binds) if server_error
@@ -46,6 +44,10 @@ module ActiveRecord
           else
             super
           end
+        end
+
+        def readonly_refusal?(exception)
+          exception.is_a?(HTTPConnection::ExecutionError) && exception.code == READONLY_CODE
         end
 
         def server_exception_class(exception)
