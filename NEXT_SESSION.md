@@ -7,8 +7,14 @@
 > rebased onto core master (clean), re-pinned to the published 0.2.0, and
 > every ClickHouse-touching core spec ran green against the live adapter
 > (109 telemetry-model + 50 request + rake examples; one intentional
-> production-profile pending). The PR's remaining checkbox is a staging soak
-> before production deploy.
+> production-profile pending). There is NO staging — the PR carries a
+> production cutover plan instead: deploy, then a one-time
+> `clickhouse:baseline` (adopts the already-migrated sink by recording
+> versions without running anything — a sandbox rehearsal proved blind
+> replay silently corrupts stored enum values), then `clickhouse:migrate`
+> no-ops. Also on the branch: an e2e Docker sandbox run (virgin sink →
+> migrate → running app → live telemetry writes/reads) and the admin log
+> filters converted to native predicates (Arel matches → ILIKE, ts ranges).
 
 ## Scope
 
@@ -18,8 +24,9 @@ Pick by what's live (value order):
    if core's pipeline surfaces environment differences (its CI boots its own
    ClickHouse via docker-compose.clickhouse.yml — creds trmnl/trmnl:8123,
    unlike this repo's 18123 rails/rails).
-2. **Consumer-driven fixes:** anything the staging soak or early 0.2.0
-   adopters surface. Real bug reports outrank all remaining roadmap items.
+2. **Consumer-driven fixes:** anything the production cutover (watch the
+   admin dashboards + Sentry after deploy) or early 0.2.0 adopters surface.
+   Real bug reports outrank all remaining roadmap items.
 3. **Corpus long tail (low value, deliberate deferrals):** pool machinery
    and the transactions family stay out unless a concrete consumer bug
    points at them. Parked question: Int32/UInt32 single-column sorting keys
