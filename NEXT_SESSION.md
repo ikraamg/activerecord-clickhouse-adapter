@@ -57,12 +57,15 @@ Pick by what's live (value order):
   `readonly=2`, never 1; grant checks fire before readonly checks (497 vs
   164).
 - The TRMNL corpus spec prefers a live ../core checkout; re-snapshot via the
-  UPSTREAM file's cp command when core adds migrations. **Already due:** core
-  master gained 20260723000001..3 (ZSTD log codec, events projection) after
-  the b66bbb90b snapshot — proven live in the Iteration 48 e2e sandbox, but
-  the vendored corpus should catch up next session. Note ../core sits on a
-  feature branch, so cp from a master checkout (e.g. the adapter-port
-  worktree after it merges).
+  UPSTREAM file's cp command when core adds migrations. Snapshot is current
+  as of core master @ cb9292f4d (33 migrations, incl. postgres_statements,
+  ZSTD log codec, events projection). ../core sits on a stale feature
+  branch — `TRMNL_CORPUS=vendored` forces the snapshot, and the spec's
+  table expectations are corpus-aware so the stale checkout still passes.
+- mise now resolves Ruby 4.0.6 in this directory (bumped 2026-07-23; gems
+  are installed under 4.0.4) — run via
+  `/opt/homebrew/bin/mise exec ruby@4.0.4 -- bundle exec …` or reinstall
+  the bundle under 4.0.6 next session.
 - Manifest skips fire in `after_setup` (ledger #57); classes whose own
   setup/teardown breaks need a suite-level `"*"` overlay entry.
 - The vendored corpus is pinned to 8.1.3; Rails-main text drift goes in

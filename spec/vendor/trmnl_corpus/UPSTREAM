@@ -1,11 +1,13 @@
 Byte-exact snapshot of TRMNL core's db/migrate_clickhouse/ — the Phase 3
 acceptance corpus (AGENTS.md). Never edit these files here.
 
-Source: ../core @ b66bbb90b (Fixed Ethereum CoinCap nil history crash (#3838))
-Copied: 2026-07-21, 27 migrations (20260706000001..20260719000002)
+Source: core master @ cb9292f4d (Fixed transform snapshot UTF-8 JSON crash (#3901)),
+copied from the master-rebased adapter-port worktree.
+Copied: 2026-07-23, 33 migrations (20260706000001..20260723000003)
 
 Re-snapshot when core adds ClickHouse migrations:
   cp ../core/db/migrate_clickhouse/*.rb spec/vendor/trmnl_corpus/
 and update this file. A local ../core checkout, when present, takes
-precedence over this snapshot in trmnl_corpus_spec.rb, so drift shows up
-locally before the snapshot goes stale.
+precedence over this snapshot in trmnl_corpus_spec.rb so drift shows up
+locally before the snapshot goes stale — unless the checkout sits on a
+stale feature branch; TRMNL_CORPUS=vendored forces the snapshot then.
