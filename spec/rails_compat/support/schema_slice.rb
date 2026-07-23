@@ -1590,10 +1590,11 @@ module ARCompat
 
         # The manifest wins outright: models over not-yet-created scratch tables
         # (ReservedWordTest) lazily guess primary_key "id", so a nil check would
-        # never reach their entries.
+        # never reach their entries. Explicit nils assign too — upstream declares
+        # those tables pk-less, and decision #64's reporting would otherwise
+        # auto-detect the slice's synthesized id sorting key.
         if PRIMARY_KEYS.key?(model.table_name)
-          explicit = PRIMARY_KEYS.fetch(model.table_name)
-          model.primary_key = explicit if explicit
+          model.primary_key = PRIMARY_KEYS.fetch(model.table_name)
         elsif model.primary_key.nil? && model.table_exists? && model.column_names.include?("id")
           model.primary_key = "id"
         end

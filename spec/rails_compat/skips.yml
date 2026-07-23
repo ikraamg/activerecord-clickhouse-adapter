@@ -799,23 +799,20 @@ DatabaseStatementsTest:
   test_exec_insert: *no_last_insert_id
 
 PrimaryKeysTest:
-  # reset_primary_key re-derives the pk from connection.primary_keys, which
-  # deliberately reports none (ledger #7) — and the reset would strip the
-  # harness-assigned pk from the model for every later test.
-  test_auto_detect_primary_key_from_schema: &no_reported_primary_key >-
-    reset_primary_key re-derives from connection.primary_keys, which the
-    adapter deliberately leaves empty (ledger #7)
-  test_primary_key_prefix: *no_reported_primary_key
-  test_primary_key_returns_value_if_it_exists: *no_reported_primary_key
-  test_reconfiguring_primary_key_resets_composite_primary_key: *no_reported_primary_key
+  # Decision #64 reports single-column id-typed sorting keys, which erased the
+  # auto-detect/prefix/returns-value skips. Composite and non-id keys still
+  # report none: ClickHouse PRIMARY KEY is an index prefix, not identity.
+  test_reconfiguring_primary_key_resets_composite_primary_key: &no_composite_primary_key_reporting >-
+    primary_keys reports single-column id-typed sorting keys only (decision
+    #64); composite sorting keys are an index prefix, not identity
   test_primary_key_update_with_custom_key_name: *key_column_update
   test_create_without_primary_key_no_extra_query: *query_count_tally
 
 CompositePrimaryKeyTest:
-  test_composite_primary_key: *no_reported_primary_key
-  test_composite_primary_key_with_reserved_words: *no_reported_primary_key
-  test_composite_primary_key_out_of_order: *no_reported_primary_key
-  test_derives_composite_primary_key: *no_reported_primary_key
+  test_composite_primary_key: *no_composite_primary_key_reporting
+  test_composite_primary_key_with_reserved_words: *no_composite_primary_key_reporting
+  test_composite_primary_key_out_of_order: *no_composite_primary_key_reporting
+  test_derives_composite_primary_key: *no_composite_primary_key_reporting
   # The dumper writes the sorting key as order:, never primary_key: — PRIMARY
   # KEY is an index prefix in ClickHouse, not identity (ledger).
   test_collectly_dump_composite_primary_key: &pk_dumps_as_order >-
@@ -824,7 +821,9 @@ CompositePrimaryKeyTest:
   test_dumping_composite_primary_key_out_of_order: *pk_dumps_as_order
 
 PrimaryKeyAnyTypeTest:
-  test_any_type_primary_key: *no_reported_primary_key
+  test_any_type_primary_key: >-
+    a String sorting key is not reported as identity (decision #64 reports
+    id-typed keys only); barcodes needs its explicit self.primary_key
   test_schema_dump_primary_key_includes_type_and_options: *pk_dumps_as_order
 
 PrimaryKeyIntegerNilDefaultTest:
@@ -832,10 +831,12 @@ PrimaryKeyIntegerNilDefaultTest:
   test_schema_dump_primary_key_bigint_with_default_nil: *pk_dumps_as_order
 
 PrimaryKeyWithAutoIncrementTest:
-  # No autoincrement in ClickHouse; the in-test AutoIncrement model derives its
-  # pk from connection.primary_keys (ledger #7), so ids never populate.
-  test_primary_key_with_integer: *no_reported_primary_key
-  test_primary_key_with_bigint: *no_reported_primary_key
+  # id: :bigint now works end-to-end (client-generated time-ordered ids satisfy
+  # the monotonic assertion); Int32 stays ungeneratable — 32 bits cannot hold a
+  # time-ordered id, so the created record's id honestly never populates.
+  test_primary_key_with_integer: >-
+    an Int32 pk cannot hold a client-generated time-ordered id (they need 63
+    bits), and no server-side autoincrement exists to fill it
 
 # core/callbacks/modules/mixin/i18n/finder_respond_to/suppressor corpora
 # (Iteration 42). bonus_time is a :time column upstream (date part coerced to
