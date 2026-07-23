@@ -26,6 +26,28 @@ Added:
 - Added a no-op `FOR UPDATE` visitor (reads are isolated snapshots of parts; no row
   locks exist), so shared `Model.lock`/`with_lock` code runs instead of dying —
   optimistic locking via `lock_version` works end-to-end
+- Added multi-replica support: `hosts:` lists interchangeable endpoints ("host" or
+  "host:port"); connections round-robin their starting endpoint, fail over on
+  connect-phase errors only (a request that never reached a server cannot double a
+  write — mid-flight failures still raise), and skip endpoints that refused within
+  `failover_cooldown:` seconds (default 30)
+- Added `read_only: true` connection option: stamps `readonly=2` on every request so
+  the server itself refuses writes; the refusal (code 164) raises
+  `ActiveRecord::ReadOnlyError` — the same class Rails' `while_preventing_writes`
+  uses — including for server-configured readonly users
+- Added `ClickHouse::AccessDenied` (< `ActiveRecord::StatementInvalid`) for the
+  server's grant refusals (code 497)
+- Added `Errno::ENETUNREACH` to the failover connect-error list (connect-phase by
+  nature, added on review — not reproducible in the test container)
+- Added primary-key reporting for tables whose sorting key is a single integer or
+  UUID column: Rails now auto-detects the model's primary key on id-keyed tables
+  (`find`/`update`/`destroy` and client-generated ids work without
+  `self.primary_key`); composite, expression, and non-id sorting keys still report
+  none — ClickHouse PRIMARY KEY is an index prefix, not a uniqueness guarantee —
+  and schema dumps keep the explicit `id: false` + `order:` shape
+- Added Rails-style `create_table id: :bigint/:uuid` (and bare `id: :primary_key`,
+  a plain Int64): the pk column doubles as the sorting key so no `order:` is
+  needed, and ids are generated client-side — no autoincrement exists
 
 Fixed:
 

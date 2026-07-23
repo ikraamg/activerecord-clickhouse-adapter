@@ -80,6 +80,14 @@ end
 
 Columns are non-nullable by default, matching ClickHouse. Use `null: true` for `Nullable(...)`.
 
+Rails-style id tables also work — `id: :bigint` (plain Int64, no autoincrement) or `id: :uuid` creates the pk column as its own sorting key, ids arrive client-generated, and models auto-detect the primary key:
+
+```ruby
+create_table :accounts, id: :bigint do |t|
+  t.string :name, default: ""
+end
+```
+
 The full alter surface works on existing tables — `rename_column`, `change_column`, `change_column_null` (with the Rails backfill default), `change_column_default`, `change_column_comment`, `change_table_comment`, and `add_index`/`remove_index` for data-skipping indexes. `create_join_table` defaults its sorting key to the two reference columns.
 
 ClickHouse-specific column options:
@@ -266,6 +274,11 @@ clickhouse:
   database: analytics_production
   username: rails
   password: secret
+  hosts:                   # interchangeable replicas ("host" or "host:port");
+    - ch-1.internal        # connections round-robin start positions and fail over
+    - ch-2.internal:8124   # to the next host on connect-phase errors
+  failover_cooldown: 30    # seconds new connections skip an endpoint that refused
+  read_only: true          # server-enforced reads only (readonly=2 on every request)
   ssl: true                # HTTPS to the server
   ssl_verify: false        # escape hatch for self-signed certificates (default: verify)
   connect_timeout: 5
@@ -281,9 +294,10 @@ clickhouse:
 ## Semantics Worth Knowing
 
 - **No transactions.** ClickHouse has none; `transaction` blocks run their contents without BEGIN/COMMIT and cannot roll back.
-- **Primary keys are client-generated.** Tables with a single-column integer or UUID sorting key get time-ordered ids (Snowflake-style / UUIDv7) assigned before INSERT.
+- **Primary keys are client-generated and auto-detected.** Tables with a single-column integer or UUID sorting key report it as the Active Record primary key — models auto-detect it, and ids are assigned client-side before INSERT (Snowflake-style / UUIDv7). Composite, expression, and other sorting keys report none (ClickHouse PRIMARY KEY is an index prefix, not a uniqueness guarantee); declare `self.primary_key` explicitly when such a key is unique by design, e.g. a ReplacingMergeTree slug.
 - **Mutation counts are best-effort.** `update_all`/`delete_all` return a pre-mutation `SELECT count()` — ClickHouse reports no affected-row counts.
 - **Eventual merges.** `ReplacingMergeTree` deduplicates at merge time; read with `.final` when you need collapsed rows.
+- **Failover never replays a request.** With `hosts:`, only connect-phase failures (refused, unreachable, open timeout) move to the next replica — those cannot have executed anything. A mid-flight failure (read timeout, reset) raises, because the statement may already have run.
 
 ## Development
 

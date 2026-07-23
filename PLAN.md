@@ -140,6 +140,8 @@ Server: `clickhouse/clickhouse-server:25.8` (LTS; reports `25.8.28.1`, timezone 
 | The circular-join AMBIGUOUS_IDENTIFIER (base table reappearing under an alias, code 207) holds on 26.6 and under the legacy analyzer (`enable_analyzer=0`) alike — not a new-analyzer quirk, a dialect rule | Iteration 26 probe (25.8.28 + 26.6.1) |
 | `Decimal(P, S)` requires `S <= P`: `Decimal(2, 10)` raises ARGUMENT_OUT_OF_BOUND (code 69) at CREATE time; `Decimal(P)` with one argument means scale 0 | Iteration 28 probe (25.8.28) |
 | `INSERT INTO t VALUES ()` is a syntax error, but `INSERT INTO t FORMAT JSONEachRow {}` inserts one all-defaults row — the ClickHouse spelling of SQL's `DEFAULT VALUES`, and it needs no column name | Iteration 29 probe (25.8.28) |
+| `readonly=1` refuses the adapter's own session settings (join_use_nulls et al.) with code 164 before any query runs; `readonly=2` permits settings changes but still refuses writes — `read_only: true` must stamp 2, not 1 | Iteration 45 probe (25.8.28) |
+| Grant checks fire before readonly checks: a SELECT-only user's CREATE TABLE raises 497 ACCESS_DENIED, a fully-granted `readonly=2` user's raises 164 READONLY | Iteration 45 probe (25.8.28) |
 
 Local corpora:
 
@@ -634,6 +636,52 @@ we add an arity-dispatched shim in `DatabaseStatements` rather than forking the 
     at DDL-build time. `change_column` gained the same key-presence defaulting,
     and the dumper's always-dump-precision override is gone: the adapter default
     is 6, so upstream's omit-6 / `precision: nil` conventions apply verbatim.
+
+62. **Failover retries connect-phase failures only** *(Iteration 45)*: `hosts:`
+    lists interchangeable replicas ("host" or "host:port", `port:` the default).
+    `HTTPConnection` keeps one endpoint list; a request that dies on
+    ECONNREFUSED / EHOSTUNREACH / SocketError / Net::OpenTimeout provably never
+    reached a server, so it rotates to the next endpoint and retries (at most
+    one attempt per endpoint). Mid-flight failures (Net::ReadTimeout, resets)
+    raise — the statement may have executed, and replaying could double a
+    write. A process-wide ledger round-robins starting endpoints across
+    connections and skips endpoints that refused within `failover_cooldown:`
+    seconds (default 30). No health-check pings, no background threads.
+
+63. **`read_only: true` is server-enforced via `readonly=2`** *(Iteration 45)*:
+    the option stamps `readonly=2` on every request — 2, not 1, because strict
+    readonly refuses the adapter's own session settings (join_use_nulls et al.)
+    with code 164 before any query runs. Code 164 translates to
+    `ActiveRecord::ReadOnlyError` (the class `while_preventing_writes` raises),
+    so server-configured readonly users surface identically. Grant refusals
+    (code 497) get their own `ClickHouse::AccessDenied < StatementInvalid`;
+    note grants are checked before readonly, so a SELECT-only user's DDL raises
+    AccessDenied, not ReadOnlyError.
+
+64. **`primary_keys` reports a single-column id-typed sorting key**
+    *(Iteration 46, approved by Ikraam — revises the Phase 3 blanket `[]`)*:
+    both contracts, honestly split. Rails' contract: `connection.primary_keys`
+    drives model pk auto-detection, so an id-keyed table now behaves drop-in
+    (`find`/`update`/`destroy`/prefetched ids) with no `self.primary_key`
+    boilerplate. ClickHouse's contract: PRIMARY KEY is an index prefix, not a
+    uniqueness guarantee, so reporting is limited to the one shape the adapter
+    already treats as identity — a sorting key that is exactly one U/Int64+ or
+    UUID column, the same gate as the client-side id generator (`generatable_
+    primary_key`, one cached lookup serves both). Composite, expression, and
+    non-id-typed sorting keys still report `[]`; explicit `self.primary_key`
+    remains the seam for those (decision #13, e.g. ReplacingMergeTree slugs).
+    The schema dumper suppresses reporting during dumps
+    (`with_suppressed_primary_key_reporting`): Rails' dumper would fold a
+    reported pk into `create_table`'s implied id column, which degrades
+    UInt64 → Int64 on reload; every table keeps dumping as `id: false` +
+    explicit columns + `order:`. The DSL side: `create_table id: :bigint/:uuid`
+    now works without an `order:` — the pk column is its own obvious sorting
+    key (native type `:primary_key` → plain Int64; no autoincrement exists, ids
+    are client-generated). Erased four harness skips (PrimaryKeysTest
+    auto-detect/prefix/returns-value, PrimaryKeyWithAutoIncrementTest bigint);
+    composite reporting stays out — Rails supports composite pks, but a
+    ClickHouse composite sorting key is an index prefix over non-unique rows,
+    and claiming identity there invites silent multi-row mutations.
 
 ## 6. Phased roadmap (each phase lands green + benchmarked before the next)
 
@@ -1335,6 +1383,40 @@ NOT_ENOUGH_SPACE mid-run and cascaded 29 nil-permitted-classes errors through
 SerializedAttributeTestWithYamlSafeLoad; the identical corpus was green on a
 fresh container — reset before blaming the harness. Harness: 5,558 runs /
 450 skips.
+
+**Phase 8 — failover + read-only connections.** *(landed — Iteration 45)*
+Multi-replica `hosts:` on the HTTP connection (decision #62): round-robin
+start positions across connections, rotation on connect-phase errors only
+(a request that never reached a server cannot double a write; mid-flight
+failures raise), a process-wide cooldown ledger (`failover_cooldown:`,
+default 30s) so fresh connections skip recently refused endpoints — no
+health-check pings, no threads. `read_only: true` stamps `readonly=2` on
+every request (decision #63); the server's code-164 refusal translates to
+`ActiveRecord::ReadOnlyError` (matching `while_preventing_writes`), and
+grant refusals (code 497) raise the new `ClickHouse::AccessDenied`.
+Landing the branch surfaced two doc-rot fixes: the TRMNL corpus snapshot
+re-pinned to core @ b66bbb90b (27 migrations — fetches, pool_events,
+process_health, four new event_type enum values), and write_settings
+specs updated for the ReadOnlyError translation. Suite: 570 examples
+green; harness unchanged (5,558 runs, 0 failures, 451 skips).
+
+**Phase 8 (cont.) — primary-key auto-detection + Rails-style id: tables.**
+*(landed — Iteration 46)* Decision #64 (approved): `primary_keys(table)`
+reports a single-column U/Int64+/UUID sorting key as Active Record identity
+— the same gate as the client-side id generator, one cached lookup serving
+both — so id-keyed tables are drop-in with zero model boilerplate; composite,
+expression, and non-id keys still report `[]` (index prefix, not identity),
+with explicit `self.primary_key` as the seam for by-design-unique keys. The
+dumper suppresses reporting to keep the `id: false` + `order:` dump shape.
+`create_table id: :bigint/:uuid/:primary_key` works without `order:` (the pk
+column is its own sorting key; `:primary_key` maps to plain Int64).
+`Errno::ENETUNREACH` joined CONNECT_ERRORS (added blind, approved — connect-
+phase by nature, unreproducible in the container). Harness fallout: the
+`PRIMARY_KEYS` slice map now assigns explicit nils (detection would otherwise
+claim synthesized id sorting keys on upstream's pk-less tables — FinderTest
+caught it), and four skips erased (PrimaryKeysTest auto-detect/prefix/
+returns-value, PrimaryKeyWithAutoIncrementTest bigint). Suite: 585 examples
+green; harness 5,558 runs, 0 failures, 447 skips.
 
 ## 7. Spec strategy (three tiers)
 
