@@ -273,10 +273,27 @@ module ActiveRecord
           data_sources.include?(name.to_s)
         end
 
-        # ClickHouse PRIMARY KEY is an index prefix, not a uniqueness guarantee, so no
-        # column is safe to expose as an Active Record primary key.
-        def primary_keys(_table_name)
-          []
+        # ClickHouse PRIMARY KEY is an index prefix, not a uniqueness guarantee. The
+        # one shape safe to report as Active Record identity is a sorting key that is
+        # exactly one id-typed column — the same class of keys the adapter generates
+        # client-side (decision #64), so Rails auto-detects the pk on id-keyed tables.
+        # Composite, expression, and non-id sorting keys report none; models may still
+        # declare self.primary_key explicitly (decision #13).
+        def primary_keys(table_name)
+          return [] if @suppress_primary_key_reporting
+
+          column, = generatable_primary_key(table_name)
+          column ? [column] : []
+        end
+
+        # The schema dumper opts out: with a reported pk Rails' dumper would imply the
+        # id column (degrading UInt64 to Int64 on reload) instead of dumping the
+        # id: false + explicit-columns + order: shape this adapter round-trips.
+        def with_suppressed_primary_key_reporting
+          @suppress_primary_key_reporting = true
+          yield
+        ensure
+          @suppress_primary_key_reporting = false
         end
 
         def indexes(table_name)

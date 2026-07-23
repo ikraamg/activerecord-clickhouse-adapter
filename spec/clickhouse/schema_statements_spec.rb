@@ -138,8 +138,57 @@ RSpec.describe "ClickHouse schema statements" do
     connection.drop_table("renamed_probe", if_exists: true)
   end
 
-  it "reports no Active Record primary key (ClickHouse sorting keys are not unique)" do
-    expect(connection.primary_keys("schema_probe")).to eq([])
+  # Identity reporting (decision #64): a sorting key that is exactly one id-typed
+  # column is the one shape the adapter treats as an Active Record primary key —
+  # the same class of keys it generates client-side. Everything else stays [] :
+  # ClickHouse PRIMARY KEY is an index prefix, not a uniqueness guarantee.
+  describe "#primary_keys" do
+    before(:all) do
+      conn = ActiveRecord::Base.lease_connection
+      conn.execute(<<~SQL.squish)
+        CREATE TABLE IF NOT EXISTS pk_report_ids (id UInt64, name String)
+        ENGINE = MergeTree ORDER BY id
+      SQL
+      conn.execute(<<~SQL.squish)
+        CREATE TABLE IF NOT EXISTS pk_report_uuids (id UUID, name String)
+        ENGINE = MergeTree ORDER BY id
+      SQL
+      conn.execute(<<~SQL.squish)
+        CREATE TABLE IF NOT EXISTS pk_report_stamps (ts DateTime, name String)
+        ENGINE = MergeTree ORDER BY ts
+      SQL
+      conn.execute(<<~SQL.squish)
+        CREATE TABLE IF NOT EXISTS pk_report_days (ts DateTime, name String)
+        ENGINE = MergeTree ORDER BY toDate(ts)
+      SQL
+    end
+
+    after(:all) do
+      conn = ActiveRecord::Base.lease_connection
+      %w[pk_report_ids pk_report_uuids pk_report_stamps pk_report_days].each do |table|
+        conn.drop_table(table, if_exists: true)
+      end
+    end
+
+    it "reports a single-column integer sorting key as the primary key" do
+      expect(connection.primary_keys("pk_report_ids")).to eq(["id"])
+    end
+
+    it "reports a single-column UUID sorting key as the primary key" do
+      expect(connection.primary_keys("pk_report_uuids")).to eq(["id"])
+    end
+
+    it "reports nothing for composite sorting keys" do
+      expect(connection.primary_keys("schema_probe")).to eq([])
+    end
+
+    it "reports nothing for sorting keys the adapter cannot generate ids for" do
+      expect(connection.primary_keys("pk_report_stamps")).to eq([])
+    end
+
+    it "reports nothing for expression sorting keys" do
+      expect(connection.primary_keys("pk_report_days")).to eq([])
+    end
   end
 
   it "maps parenthesized datetime types like Rails' other adapters" do

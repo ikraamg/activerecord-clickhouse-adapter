@@ -54,8 +54,10 @@ module ActiveRecord
 
         # Projections dump right after their table as add_projection calls, parsed back
         # out of the stored query text (SELECT ... [GROUP BY ...] [ORDER BY ...]).
+        # Primary-key reporting is suppressed so every table dumps as id: false +
+        # explicit columns + order: — an implied id column would lose UInt64 on reload.
         def table(table, stream)
-          super
+          @connection.with_suppressed_primary_key_reporting { super }
           projections(table).each do |row|
             stream.puts("  #{projection_statement(table, row)}")
             stream.puts
