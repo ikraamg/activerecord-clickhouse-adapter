@@ -4,7 +4,7 @@ module ActiveRecord
   module ConnectionAdapters
     module ClickHouse
       class TableDefinition < ConnectionAdapters::TableDefinition
-        attr_reader :engine, :order, :partition, :ttl, :table_settings, :primary_key_clause, :sample
+        attr_reader :engine, :partition, :ttl, :table_settings, :primary_key_clause, :sample
 
         def initialize(conn, name, engine: "MergeTree", order: nil, partition: nil, ttl: nil,
                        settings: nil, primary_key_clause: nil, sample: nil, **)
@@ -16,6 +16,12 @@ module ActiveRecord
           @primary_key_clause = primary_key_clause
           @sample = sample
           super(conn, name, **)
+        end
+
+        # A Rails-style id: table carries its own obvious sorting key — the pk
+        # column — so create_table works without an explicit order: (decision #64).
+        def order
+          @order || columns.find { |column| column.options[:primary_key] }&.name&.to_s
         end
       end
 

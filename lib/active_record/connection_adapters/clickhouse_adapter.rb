@@ -83,6 +83,9 @@ module ActiveRecord
       def build_insert_sql(insert) = "INSERT #{insert.into} #{insert.values_list}" # :nodoc:
 
       NATIVE_DATABASE_TYPES = {
+        # No autoincrement exists; ids are generated client-side (decision #19),
+        # so a Rails-style pk is just a plain Int64 column.
+        primary_key: { name: "Int64" },
         string: { name: "String" },
         text: { name: "String" },
         integer: { name: "Int32", limit: 4 },

@@ -111,4 +111,39 @@ RSpec.describe "ClickHouse migration DSL" do
     connection.drop_table("dsl_probe", if_exists: true)
     expect(connection.table_exists?("dsl_probe")).to be(false)
   end
+
+  # Rails' side of decision #64: an id-typed primary-key request has an obvious
+  # sorting key (the pk column itself), so id: works without an order: clause and
+  # the table behaves drop-in — reported pk, client-generated ids.
+  describe "Rails-style id: tables" do
+    it "creates a bigint id column sorted by itself" do
+      create_dsl_probe(id: :bigint) { |t| t.string :name, default: "" }
+      expect(show_create).to include("`id` Int64", "ORDER BY id")
+    end
+
+    it "reports the id column as the primary key" do
+      create_dsl_probe(id: :bigint) { |t| t.string :name, default: "" }
+      expect(connection.primary_keys("dsl_probe")).to eq(["id"])
+    end
+
+    it "creates a uuid id column" do
+      create_dsl_probe(id: :uuid) { |t| t.string :name, default: "" }
+      expect(show_create).to include("`id` UUID", "ORDER BY id")
+    end
+
+    it "maps the bare :primary_key type to Int64" do
+      create_dsl_probe(id: :primary_key) { |t| t.string :name, default: "" }
+      expect(show_create).to include("`id` Int64")
+    end
+
+    it "honors a custom primary key name" do
+      create_dsl_probe(id: :bigint, primary_key: "code") { |t| t.string :name, default: "" }
+      expect(show_create).to include("`code` Int64", "ORDER BY code")
+    end
+
+    it "keeps an explicit order: over the synthesized one" do
+      create_dsl_probe(id: :bigint, order: "(id, name)") { |t| t.string :name, default: "" }
+      expect(show_create).to include("ORDER BY (id, name)")
+    end
+  end
 end

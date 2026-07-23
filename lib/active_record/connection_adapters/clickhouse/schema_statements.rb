@@ -329,7 +329,8 @@ module ActiveRecord
         def type_to_sql(type, limit: nil, precision: nil, scale: nil, **)
           case type.to_s
           when "integer" then integer_to_sql(limit)
-          when "bigint" then "Int64"
+          # No autoincrement; a Rails-style pk is a plain Int64 filled client-side.
+          when "bigint", "primary_key" then "Int64"
           # binary/blob included: ClickHouse String is an arbitrary byte sequence.
           when "string", "text", "binary", "blob" then "String"
           when "float" then "Float64"
