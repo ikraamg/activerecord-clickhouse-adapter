@@ -23,7 +23,11 @@ module ActiveRecord
         # Failures raised before the request reaches a server: retrying them on
         # another replica can never double a write. Anything mid-flight (read
         # timeout, reset) raises instead — the statement may have executed.
-        CONNECT_ERRORS = [Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError, Net::OpenTimeout].freeze
+        # ENETUNREACH added blind (approved 2026-07-22): connect-phase by nature,
+        # but not reproducible in the test container.
+        CONNECT_ERRORS = [
+          Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH, SocketError, Net::OpenTimeout
+        ].freeze
 
         # Process-wide replica ledger: rotates the starting endpoint across
         # connections and remembers connect failures so fresh connections skip
