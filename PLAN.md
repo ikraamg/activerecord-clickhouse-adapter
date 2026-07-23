@@ -1418,12 +1418,15 @@ caught it), and four skips erased (PrimaryKeysTest auto-detect/prefix/
 returns-value, PrimaryKeyWithAutoIncrementTest bigint). Suite: 585 examples
 green; harness 5,558 runs, 0 failures, 447 skips.
 
-**Release — 0.2.0 cut locally.** *(Iteration 47, 2026-07-23)* Version bumped
-(gem_version.rb + gemspec, parity spec-enforced), CHANGELOG dated, full
-combined gate green at the new version (586 examples, 0 failures), gem built
-and content-audited. Publishing (push, v0.2.0 tag, gem push — MFA required)
-waits on Ikraam. Next: re-pin the core `adapter-port` worktree to published
-0.2.0 and open the cutover PR.
+**Release — 0.2.0 published; core cutover PR open.** *(Iterations 47–48,
+2026-07-23)* Version bumped (gem_version.rb + gemspec, parity spec-enforced),
+CHANGELOG dated, full combined gate green at the new version (586 examples,
+0 failures), gem built, content-audited, and **pushed to RubyGems**; main
+fast-forwarded and pushed, v0.2.0 tagged. The core cutover PR is open
+(https://github.com/usetrmnl/core/pull/3902): `clickhouse-adapter-port`
+rebased onto core master, re-pinned to published 0.2.0, all ClickHouse-
+touching core specs green against the live adapter (109 + 50 + 58 examples).
+Remaining before merge: core review + a staging soak.
 
 ## 7. Spec strategy (three tiers)
 
